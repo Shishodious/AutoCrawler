@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #6366f1; /* Indigo 500 */
+  --color-secondary: #a855f7; /* Purple 500 */
+  --color-dark: #0f172a; /* Slate 900 */
+  --color-dark-light: #1e293b; /* Slate 800 */
+}
+
+body {
+  background-color: var(--color-dark);
+  color: white;
+}
