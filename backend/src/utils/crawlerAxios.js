@@ -150,7 +150,8 @@ async function crawlWithAxios(url, options = {}) {
             title,
             links: uniqueLinks,
             url: normalizeUrl(url) || url,
-            timestamp: new Date()
+            timestamp: new Date(),
+            content: response.data  // Add HTML content for detection
         };
 
     } catch (error) {
