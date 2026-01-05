@@ -2,13 +2,16 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const connectCluster = require("./config/database");
+const { initializeSocket } = require('./services/socketService');
 
 const app = express();
 
 const passport = require('passport');
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: "http://localhost:5173"
+}));
 app.use(express.json());
 app.use(passport.initialize());
 
@@ -27,13 +30,18 @@ app.use('/api', require('./routes/crawlRoutes'));
 connectCluster()
   .then(() => {
     console.log("✅ Database connection established");
-    app.listen(process.env.PORT || 5000, () => {
+    
+    // Your existing code - this returns an HTTP server
+    const server = app.listen(process.env.PORT || 5000, () => {
       console.log(
         `🚀 Server successfully listening on port ${process.env.PORT || 5000}`
       );
     });
+    
+    // Initialize Socket.IO with authentication
+    initializeSocket(server);
   })
   .catch((err) => {
     console.error("❌ Database connection failed:", err.message);
-    process.exit(1); // Exit process if DB connection fails
-  });
+    process.exit(1);
+  }); 
