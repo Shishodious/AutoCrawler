@@ -1,2 +1,14 @@
 node_modules
 .env
+screenshots
+test-crawler.js
+test-custom.js
+test-results.json   
+task.md 
+test-intelligent.js
+test-recursive.js
+test-sitedata-model.js
+test.md
+n8n_workflow.json
+docker-compose.yml
+quick-test-sitedata.js
