@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Activity, History, LogOut } from 'lucide-react';
+import { disconnectSocket } from "../services/socket";
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -9,6 +10,7 @@ const Navbar = () => {
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    disconnectSocket("logout");
     navigate('/login');
   };
 

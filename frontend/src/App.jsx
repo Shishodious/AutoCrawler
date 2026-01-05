@@ -4,6 +4,8 @@ import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import History from './pages/History';
 import Login from './pages/Login';
+import AuthGate from './components/AuthGate';
+import { disconnectSocket } from './services/socket';
 
 import { jwtDecode } from 'jwt-decode';
 
@@ -11,6 +13,8 @@ const PrivateRoute = ({ children }) => {
   const token = localStorage.getItem('token');
   
   if (!token) {
+    // Gracefully disconnect socket if no token
+    disconnectSocket("no token");
     return <Navigate to="/login" />;
   }
 
@@ -19,13 +23,20 @@ const PrivateRoute = ({ children }) => {
     const currentTime = Date.now() / 1000;
     
     if (decoded.exp < currentTime) {
+      // Token expired - gracefully disconnect socket
+      console.log('🔒 Token expired, disconnecting socket...');
+      disconnectSocket("token expired");
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       return <Navigate to="/login" />;
     }
     
-    return children;
+    // Wrap children with AuthGate to ensure socket initialization
+    return <AuthGate>{children}</AuthGate>;
   } catch (error) {
+    // Invalid token - gracefully disconnect socket
+    console.error('🔒 Invalid token, disconnecting socket...');
+    disconnectSocket("invalid token");
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     return <Navigate to="/login" />;
