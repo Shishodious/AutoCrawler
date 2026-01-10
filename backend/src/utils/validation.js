@@ -108,6 +108,29 @@ const crawlRequestSchema = z.object({
   }).optional().default({})
 });
 
+// Recursive crawl request schema for POST /api/crawl/recursive
+const recursiveCrawlRequestSchema = z.object({
+  url: urlSchema,
+  options: z.object({
+    // Recursive-specific options
+    maxDepth: z.number().min(0).max(5).optional().default(3),
+    maxPages: z.number().min(1).max(100).optional().default(50),
+    childLinksPerPage: z.number().min(1).max(10).optional().default(3),
+    delayMs: z.number().min(500).max(5000).optional().default(1500),
+    sameDomainOnly: z.boolean().optional().default(true),
+    verbose: z.boolean().optional().default(true),
+    
+    // intelligentCrawl options (passed through)
+    forceMethod: z.enum(['axios', 'puppeteer']).optional(),
+    detectionThreshold: z.number().min(0).max(1).optional().default(0.5),
+    
+    // Puppeteer-specific options
+    blockResources: z.boolean().optional().default(true),
+    autoScrollEnabled: z.boolean().optional().default(false),
+    screenshot: z.boolean().optional().default(false)
+  }).optional().default({})
+});
+
 module.exports = { 
   registerSchema,
   urlSchema,
@@ -118,5 +141,6 @@ module.exports = {
   updateSiteDataSchema,
   errorReportSchema,
   siteDataQuerySchema,
-  crawlRequestSchema
+  crawlRequestSchema,
+  recursiveCrawlRequestSchema
 };

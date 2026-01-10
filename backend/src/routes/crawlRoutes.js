@@ -2,13 +2,15 @@ const express = require('express');
 const router = express.Router();
 const passport = require('passport');
 const axios = require('axios');
+const mongoose = require('mongoose');
 
 // Import models and utilities
 const SiteData = require('../models/SiteData');
 const { intelligentCrawl, recursiveCrawl } = require('../utils/hybridCrawler');
 const { getErrorType } = require('../utils/errorHandler');
 const { 
-  crawlRequestSchema, 
+  crawlRequestSchema,
+  recursiveCrawlRequestSchema,
   createSiteDataSchema,
   siteDataQuerySchema 
 } = require('../utils/validation');
@@ -179,6 +181,159 @@ router.post('/crawl', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to crawl website',
+      details: {
+        type: errorType,
+        message: error.message
+      }
+    });
+  }
+});
+
+// ============================================
+// POST /api/crawl/recursive - Start Recursive Crawl
+// ============================================
+router.post('/crawl/recursive', async (req, res) => {
+  try {
+    // Validate request body
+    const validationResult = recursiveCrawlRequestSchema.safeParse(req.body);
+    
+    if (!validationResult.success) {
+      const errors = validationResult.error.issues.map(err => ({
+        field: err.path.join('.'),
+        message: err.message
+      }));
+      return res.status(400).json({ 
+        success: false,
+        error: 'Validation failed', 
+        details: errors 
+      });
+    }
+
+    const { url, options } = validationResult.data;
+    
+    console.log(`[API] Starting recursive crawl from: ${url}`);
+    console.log(`[API] Options: maxDepth=${options.maxDepth}, maxPages=${options.maxPages}, sameDomainOnly=${options.sameDomainOnly}`);
+    
+    const startTime = Date.now();
+
+    // Perform recursive crawl
+    const crawlResult = await recursiveCrawl(url, {
+      ...options,
+      verbose: true
+    });
+
+    // Check if crawl was successful
+    if (!crawlResult.success) {
+      return res.status(500).json({
+        success: false,
+        error: 'Recursive crawl failed',
+        details: {
+          message: 'Crawl did not complete successfully'
+        }
+      });
+    }
+
+    // Generate crawl session ID to group all pages together
+    const crawlSessionId = new mongoose.Types.ObjectId();
+    
+    console.log(`[API] Crawl complete. Saving ${crawlResult.results.length} pages to database...`);
+    console.log(`[API] Session ID: ${crawlSessionId}`);
+
+    // Save all crawled pages to database
+    const savedPages = [];
+    const failedPages = [];
+    
+    for (const pageResult of crawlResult.results) {
+      try {
+        // Only save successful crawls
+        if (pageResult.success) {
+          const siteDataPayload = {
+            url: pageResult.url || url,
+            title: pageResult.title || 'Untitled',
+            links: pageResult.links || [],
+            metadata: {
+              description: pageResult.metadata?.description || pageResult.description || '',
+              keywords: pageResult.metadata?.keywords || [],
+              author: pageResult.metadata?.author || '',
+              ogImage: pageResult.metadata?.ogImage || '',
+              favicon: pageResult.metadata?.favicon || '',
+              language: pageResult.metadata?.language || '',
+              contentType: pageResult.metadata?.contentType || 'text/html'
+            },
+            crawlerStats: {
+              method: pageResult.method,
+              duration: pageResult.duration,
+              depth: pageResult.depth,
+              statusCode: pageResult.statusCode || 200,
+              responseSize: pageResult.responseSize || 0
+            },
+            sslInfo: {
+              protocol: pageResult.url?.startsWith('https') ? 'https' : 'http',
+              tlsVersion: pageResult.tlsVersion || 'N/A',
+              certificateValid: pageResult.certificateValid || null
+            },
+            crawlSuccess: true,
+            crawlSessionId: crawlSessionId
+          };
+
+          // Add userId only if user is authenticated
+          if (req.user?.id) {
+            siteDataPayload.userId = req.user.id;
+          }
+
+          const siteData = new SiteData(siteDataPayload);
+          await siteData.save();
+          savedPages.push(siteData._id);
+          
+        } else {
+          // Track failed pages
+          failedPages.push({
+            url: pageResult.url,
+            depth: pageResult.depth,
+            error: pageResult.error
+          });
+        }
+      } catch (saveError) {
+        console.error(`[API] Failed to save page ${pageResult.url}:`, saveError.message);
+        failedPages.push({
+          url: pageResult.url,
+          depth: pageResult.depth,
+          error: { type: 'SAVE_ERROR', message: saveError.message }
+        });
+      }
+    }
+
+    const totalDuration = Date.now() - startTime;
+    
+    console.log(`[API] Saved ${savedPages.length} pages successfully`);
+    console.log(`[API] Failed to save ${failedPages.length} pages`);
+    console.log(`[API] Total duration: ${totalDuration}ms`);
+
+    // Return success response with comprehensive summary
+    res.status(200).json({
+      success: true,
+      message: 'Recursive crawl completed successfully',
+      crawlSessionId: crawlSessionId.toString(),
+      summary: {
+        ...crawlResult.summary,
+        totalDuration,
+        savedPages: savedPages.length,
+        failedToSave: failedPages.length
+      },
+      startUrl: crawlResult.startUrl,
+      baseUrl: crawlResult.baseUrl,
+      maxDepthReached: crawlResult.maxDepthReached,
+      savedPageIds: savedPages,
+      failedPages: failedPages.length > 0 ? failedPages : undefined
+    });
+
+  } catch (error) {
+    const errorType = getErrorType(error);
+    console.error('[API] Recursive crawl failed:', errorType, error.message);
+    
+    res.status(500).json({
+      success: false,
+      error: 'Failed to perform recursive crawl',
       details: {
         type: errorType,
         message: error.message
@@ -407,6 +562,87 @@ router.delete('/sites/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to delete site',
+      details: error.message
+    });
+  }
+});
+
+// ============================================
+// GET /api/crawl/sessions/:sessionId - Get Crawl Session
+// ============================================
+router.get('/crawl/sessions/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    // Validate sessionId format
+    if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid session ID format',
+        details: 'Session ID must be a valid MongoDB ObjectId'
+      });
+    }
+
+    // Find all pages from this crawl session
+    const pages = await SiteData.find({ crawlSessionId: sessionId })
+      .sort({ 'crawlerStats.depth': 1, createdAt: 1 })
+      .select('-__v');
+    
+    if (pages.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Crawl session not found',
+        details: `No pages found for session ID: ${sessionId}`
+      });
+    }
+
+    // Calculate session summary statistics
+    const successfulPages = pages.filter(p => p.crawlSuccess);
+    const failedPages = pages.filter(p => !p.crawlSuccess);
+    
+    const summary = {
+      totalPages: pages.length,
+      successfulPages: successfulPages.length,
+      failedPages: failedPages.length,
+      successRate: pages.length > 0 
+        ? ((successfulPages.length / pages.length) * 100).toFixed(2) + '%' 
+        : '0%',
+      methods: {
+        axios: pages.filter(p => p.crawlerStats?.method === 'axios').length,
+        puppeteer: pages.filter(p => p.crawlerStats?.method === 'puppeteer').length
+      },
+      maxDepth: Math.max(...pages.map(p => p.crawlerStats?.depth || 0)),
+      totalDuration: pages.reduce((sum, p) => sum + (p.crawlerStats?.duration || 0), 0),
+      avgDuration: successfulPages.length > 0
+        ? Math.round(successfulPages.reduce((sum, p) => sum + (p.crawlerStats?.duration || 0), 0) / successfulPages.length)
+        : 0,
+      startUrl: pages[0]?.url,
+      crawledAt: pages[0]?.createdAt
+    };
+
+    res.status(200).json({
+      success: true,
+      sessionId,
+      summary,
+      pages: pages.map(page => ({
+        id: page._id,
+        url: page.url,
+        title: page.title,
+        depth: page.crawlerStats?.depth,
+        method: page.crawlerStats?.method,
+        duration: page.crawlerStats?.duration,
+        linksFound: page.links?.length || 0,
+        crawlSuccess: page.crawlSuccess,
+        crawledAt: page.createdAt
+      }))
+    });
+
+  } catch (error) {
+    console.error('[API] Failed to fetch crawl session:', error);
+    
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch crawl session',
       details: error.message
     });
   }

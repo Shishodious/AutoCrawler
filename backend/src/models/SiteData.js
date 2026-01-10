@@ -170,6 +170,13 @@ const siteDataSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     index: true
+  },
+  
+  // Crawl session ID (for grouping pages from recursive crawls)
+  crawlSessionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    index: true,
+    required: false
   }
 }, {
   timestamps: true, // Automatically adds createdAt and updatedAt
@@ -181,6 +188,7 @@ siteDataSchema.index({ url: 1, createdAt: -1 });
 siteDataSchema.index({ 'crawlerStats.method': 1, crawlSuccess: 1 });
 siteDataSchema.index({ userId: 1, createdAt: -1 });
 siteDataSchema.index({ errorType: 1 }, { sparse: true });
+siteDataSchema.index({ crawlSessionId: 1, createdAt: -1 }, { sparse: true });
 
 // Virtual for crawl age
 siteDataSchema.virtual('crawlAge').get(function() {
