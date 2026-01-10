@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import History from './pages/History';
+import SessionDetails from './pages/SessionDetails';
+import Stats from './pages/Stats';
 import Login from './pages/Login';
 import AuthGate from './components/AuthGate';
 import { disconnectSocket } from './services/socket';
@@ -65,7 +67,22 @@ function App() {
               <PrivateRoute>
                 <History />
               </PrivateRoute>
-            
+            }
+          />
+          <Route
+            path="/session/:sessionId"
+            element={
+              <PrivateRoute>
+                <SessionDetails />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/stats"
+            element={
+              <PrivateRoute>
+                <Stats />
+              </PrivateRoute>
             }
           />
         </Routes>

@@ -32,4 +32,37 @@ api.interceptors.response.use(
   }
 );
 
+// ============================================
+// Crawl Operations
+// ============================================
+export const startCrawl = (url, options = {}) => 
+  api.post('/crawl', { url, options });
+
+export const startRecursiveCrawl = (url, options = {}) => 
+  api.post('/crawl/recursive', { url, options });
+
+// ============================================
+// Sites/History Operations
+// ============================================
+export const getSites = (params = {}) => 
+  api.get('/sites', { params });
+
+export const getSiteById = (id) => 
+  api.get(`/sites/${id}`);
+
+export const deleteSite = (id) => 
+  api.delete(`/sites/${id}`);
+
+// ============================================
+// Session Operations
+// ============================================
+export const getSession = (sessionId) => 
+  api.get(`/crawl/sessions/${sessionId}`);
+
+// ============================================
+// Statistics
+// ============================================
+export const getStats = () => 
+  api.get('/stats');
+
 export default api;
