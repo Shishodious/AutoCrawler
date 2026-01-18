@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { startCrawl, startRecursiveCrawl } from '../api';
 import { Play, Loader2, Link as LinkIcon, Wifi, WifiOff, ExternalLink } from 'lucide-react';
 import { getSocket } from '../services/socket';
+import CrawlProgressPanel from '../components/CrawlProgressPanel';
 
 const Home = () => {
   const navigate = useNavigate();
@@ -17,6 +18,15 @@ const Home = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [socketMessages, setSocketMessages] = useState([]);
   const [socketError, setSocketError] = useState(null);
+  
+  // Real-time crawl states
+  const [crawlStatus, setCrawlStatus] = useState('idle'); // 'idle' | 'running' | 'complete' | 'error'
+  const [crawlProgress, setCrawlProgress] = useState({});
+  const [crawlMethod, setCrawlMethod] = useState(null);
+  const [currentDepth, setCurrentDepth] = useState(null);
+  const [linksFound, setLinksFound] = useState([]);
+  const [crawlStats, setCrawlStats] = useState(null);
+  const [crawlErrors, setCrawlErrors] = useState([]);
 
   // Default recursive crawl options
   const DEFAULT_RECURSIVE_OPTIONS = {
@@ -54,11 +64,71 @@ const Home = () => {
           console.log('Received server message:', data);
           setSocketMessages(prev => [...prev, `Server says: ${data}`]);
         };
+        
+        // Crawl event listeners
+        const handleCrawlStart = (data) => {
+          console.log('🚀 Crawl started:', data);
+          setCrawlStatus('running');
+          setCrawlProgress({});
+          setCrawlMethod(null);
+          setCurrentDepth(null);
+          setLinksFound([]);
+          setCrawlStats(null);
+          setCrawlErrors([]);
+          setSocketMessages(prev => [...prev, `Crawl started: ${data.startUrl}`]);
+        };
+        
+        const handleMethodDetected = (data) => {
+          console.log('🔍 Method detected:', data);
+          setCrawlMethod(data.method);
+          setSocketMessages(prev => [...prev, `Using ${data.method}: ${data.reason}`]);
+        };
+        
+        const handleCrawlProgress = (data) => {
+          console.log('📊 Progress:', data);
+          setCrawlProgress(data);
+        };
+        
+        const handleLinkFound = (data) => {
+          console.log('🔗 Link found:', data);
+          setLinksFound(prev => [...prev, data]);
+        };
+        
+        const handleDepthChange = (data) => {
+          console.log('📏 Depth change:', data);
+          setCurrentDepth(data);
+          setSocketMessages(prev => [...prev, `Depth ${data.currentDepth}/${data.maxDepth}`]);
+        };
+        
+        const handleCrawlComplete = (data) => {
+          console.log('✅ Crawl complete:', data);
+          setCrawlStatus('complete');
+          setCrawlStats(data);
+          setSocketMessages(prev => [...prev, `Crawl complete: ${data.totalPages} pages`]);
+        };
+        
+        const handleCrawlError = (data) => {
+          console.error('❌ Crawl error:', data);
+          setCrawlErrors(prev => [...prev, data]);
+          if (data.fatal) {
+            setCrawlStatus('error');
+          }
+          setSocketMessages(prev => [...prev, `Error: ${data.errorMessage}`]);
+        };
 
         socket.on('connect', handleConnect);
         socket.on('disconnect', handleDisconnect);
         socket.on('connect_error', handleConnectError);
         socket.on('server-response', handleServerResponse);
+        
+        // Register crawl event listeners
+        socket.on('crawl:start', handleCrawlStart);
+        socket.on('crawl:method-detected', handleMethodDetected);
+        socket.on('crawl:progress', handleCrawlProgress);
+        socket.on('crawl:link-found', handleLinkFound);
+        socket.on('crawl:depth-change', handleDepthChange);
+        socket.on('crawl:complete', handleCrawlComplete);
+        socket.on('crawl:error', handleCrawlError);
 
         setIsConnected(socket.connected);
 
@@ -67,6 +137,15 @@ const Home = () => {
           socket.off('disconnect', handleDisconnect);
           socket.off('connect_error', handleConnectError);
           socket.off('server-response', handleServerResponse);
+          
+          // Cleanup crawl event listeners
+          socket.off('crawl:start', handleCrawlStart);
+          socket.off('crawl:method-detected', handleMethodDetected);
+          socket.off('crawl:progress', handleCrawlProgress);
+          socket.off('crawl:link-found', handleLinkFound);
+          socket.off('crawl:depth-change', handleDepthChange);
+          socket.off('crawl:complete', handleCrawlComplete);
+          socket.off('crawl:error', handleCrawlError);
         };
       } catch (error) {
         console.error('Failed to get socket:', error);
@@ -101,17 +180,30 @@ const Home = () => {
     setError(null);
     setResult(null);
     setRecursiveResult(null);
+    
+    // Reset crawl states
+    setCrawlStatus('idle');
+    setCrawlProgress({});
+    setCrawlMethod(null);
+    setCurrentDepth(null);
+    setLinksFound([]);
+    setCrawlStats(null);
+    setCrawlErrors([]);
 
     try {
+      const socket = getSocket();
+      const socketId = socket?.id;
+      
       if (crawlMode === 'single') {
-        const response = await startCrawl(url);
-        setResult(response.data.data);
+        const response = await startCrawl(url, {}, socketId);
+        setResult(response.data);
       } else {
-        const response = await startRecursiveCrawl(url, DEFAULT_RECURSIVE_OPTIONS);
-        setRecursiveResult(response.data);
+        const response = await startRecursiveCrawl(url, DEFAULT_RECURSIVE_OPTIONS, socketId);
+        setRecursiveResult(response);
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to crawl website');
+      setCrawlStatus('error');
     } finally {
       setLoading(false);
     }
@@ -234,6 +326,17 @@ const Home = () => {
           </div>
         )}
       </div>
+      
+      {/* Real-Time Crawl Progress Panel */}
+      <CrawlProgressPanel
+        crawlStatus={crawlStatus}
+        crawlProgress={crawlProgress}
+        crawlMethod={crawlMethod}
+        currentDepth={currentDepth}
+        linksFound={linksFound}
+        crawlStats={crawlStats}
+        crawlErrors={crawlErrors}
+      />
 
       {/* Single Crawl Result */}
       {result && crawlMode === 'single' && (

@@ -35,11 +35,34 @@ api.interceptors.response.use(
 // ============================================
 // Crawl Operations
 // ============================================
-export const startCrawl = (url, options = {}) => 
-  api.post('/crawl', { url, options });
+// Start a single-page crawl
+export const startCrawl = async (url, options = {}, socketId = null) => {
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+  
+  // Add socket ID header if provided
+  if (socketId) {
+    headers['X-Socket-ID'] = socketId;
+  }
+  
+  const response = await api.post('/crawl', { url, options }, { headers });
+  return response.data;
+};
 
-export const startRecursiveCrawl = (url, options = {}) => 
-  api.post('/crawl/recursive', { url, options });
+export const startRecursiveCrawl = async (url, options = {}, socketId = null) => {
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+  
+  // Add socket ID header if provided
+  if (socketId) {
+    headers['X-Socket-ID'] = socketId;
+  }
+  
+  const response = await api.post('/crawl/recursive', { url, options }, { headers });
+  return response.data;
+};
 
 // ============================================
 // Sites/History Operations
