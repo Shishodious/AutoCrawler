@@ -70,7 +70,35 @@ const getIO = () => {
   return io;
 };
 
+/**
+ * Emit crawl event to a specific socket
+ * @param {string} eventName - Name of the event to emit
+ * @param {Object} data - Event data payload
+ * @param {string} socketId - Target socket ID (optional)
+ */
+//IT IS A GENERIC EMITTER FUNCTION 
+const emitCrawlEvent = (eventName, data, socketId = null) => {
+  if (!io) {
+    console.warn('[Socket Service] Cannot emit event: Socket.IO not initialized');
+    return;
+  }
+
+  if (!socketId) {
+    console.warn(`[Socket Service] No socket ID provided for event: ${eventName}`);
+    return;
+  }
+
+  try {
+    // Emit to specific socket
+    io.to(socketId).emit(eventName, data);
+    console.log(`[Socket Service] Emitted ${eventName} to socket ${socketId}`);
+  } catch (error) {
+    console.error(`[Socket Service] Failed to emit ${eventName}:`, error.message);
+  }
+};
+
 module.exports = {
   initializeSocket,
-  getIO
+  getIO,
+  emitCrawlEvent
 };

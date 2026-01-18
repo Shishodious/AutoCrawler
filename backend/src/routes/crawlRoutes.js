@@ -8,6 +8,9 @@ const mongoose = require('mongoose');
 const SiteData = require('../models/SiteData');
 const { intelligentCrawl, recursiveCrawl } = require('../utils/hybridCrawler');
 const { getErrorType } = require('../utils/errorHandler');
+const { emitCrawlEvent } = require('../services/socketService');
+const extractSocketId = require('../middleware/socketIdMiddleware');
+//only 2 routes need to extract socket id
 const { 
   crawlRequestSchema,
   recursiveCrawlRequestSchema,
@@ -18,7 +21,7 @@ const {
 // ============================================
 // POST /api/crawl - Start Hybrid Crawl
 // ============================================
-router.post('/crawl', async (req, res) => {
+router.post('/crawl', extractSocketId, async (req, res) => {
   try {
     // Validate request body
     const validationResult = crawlRequestSchema.safeParse(req.body);
@@ -38,12 +41,15 @@ router.post('/crawl', async (req, res) => {
     const { url, options } = validationResult.data;
     
     console.log(`[API] Starting crawl for: ${url}`);
+    console.log(`[API] Socket ID: ${req.socketId || 'None (API-only mode)'}`);
     const startTime = Date.now();
 
-    // Perform intelligent crawl
+    // Perform intelligent crawl with socket support
     const crawlResult = await intelligentCrawl(url, {
       ...options,
-      verbose: true
+      verbose: true,
+      socketId: req.socketId,
+      emitEvent: emitCrawlEvent
     });
 
     // Check if crawl was successful
@@ -134,24 +140,6 @@ router.post('/crawl', async (req, res) => {
     
     console.log(`[API] Saved crawl data for: ${url} (ID: ${siteData._id})`);
 
-    // // Trigger N8n Webhook (if configured)
-    // if (process.env.N8N_WEBHOOK_URL) {
-    //   try {
-    //     await axios.post(process.env.N8N_WEBHOOK_URL, {
-    //       url,
-    //       title: siteData.title,
-    //       links: siteData.links,
-    //       method: crawlResult.method,
-    //       duration: crawlResult.duration,
-    //       timestamp: siteData.createdAt
-    //     });
-    //     console.log('[API] N8n webhook triggered');
-    //   } catch (webhookError) {
-    //     console.error('[API] Failed to trigger N8n webhook:', webhookError.message);
-    //     // Don't fail the request if webhook fails
-    //   }`
-    // }
-
     // Return success response with method stats
     res.status(200).json({
       success: true,
@@ -192,7 +180,7 @@ router.post('/crawl', async (req, res) => {
 // ============================================
 // POST /api/crawl/recursive - Start Recursive Crawl
 // ============================================
-router.post('/crawl/recursive', async (req, res) => {
+router.post('/crawl/recursive', extractSocketId, async (req, res) => {
   try {
     // Validate request body
     const validationResult = recursiveCrawlRequestSchema.safeParse(req.body);
@@ -213,13 +201,16 @@ router.post('/crawl/recursive', async (req, res) => {
     
     console.log(`[API] Starting recursive crawl from: ${url}`);
     console.log(`[API] Options: maxDepth=${options.maxDepth}, maxPages=${options.maxPages}, sameDomainOnly=${options.sameDomainOnly}`);
+    console.log(`[API] Socket ID: ${req.socketId || 'None (API-only mode)'}`);
     
     const startTime = Date.now();
 
-    // Perform recursive crawl
+    // Perform recursive crawl with socket support
     const crawlResult = await recursiveCrawl(url, {
       ...options,
-      verbose: true
+      verbose: true,
+      socketId: req.socketId,
+      emitEvent: emitCrawlEvent
     });
 
     // Check if crawl was successful
