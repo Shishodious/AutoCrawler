@@ -10,6 +10,7 @@ const { intelligentCrawl, recursiveCrawl } = require('../utils/hybridCrawler');
 const { getErrorType } = require('../utils/errorHandler');
 const { emitCrawlEvent } = require('../services/socketService');
 const extractSocketId = require('../middleware/socketIdMiddleware');
+const { triggerSingleCrawl, triggerRecursiveCrawl } = require('../utils/n8nTrigger');
 //only 2 routes need to extract socket id
 const { 
   crawlRequestSchema,
@@ -139,6 +140,9 @@ router.post('/crawl', extractSocketId, async (req, res) => {
     await siteData.save();
     
     console.log(`[API] Saved crawl data for: ${url} (ID: ${siteData._id})`);
+
+    // Trigger n8n webhook (non-blocking)
+    triggerSingleCrawl({ url, crawlResult, siteData });
 
     // Return success response with method stats
     res.status(200).json({
@@ -299,6 +303,9 @@ router.post('/crawl/recursive', extractSocketId, async (req, res) => {
     console.log(`[API] Saved ${savedPages.length} pages successfully`);
     console.log(`[API] Failed to save ${failedPages.length} pages`);
     console.log(`[API] Total duration: ${totalDuration}ms`);
+
+    // Trigger n8n webhook (non-blocking)
+    triggerRecursiveCrawl({ url, crawlResult, sessionId: crawlSessionId, savedPages });
 
     // Return success response with comprehensive summary
     res.status(200).json({
