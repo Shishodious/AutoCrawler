@@ -1,0 +1,73 @@
+{
+  "name": "email-crawler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crawl-complete",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "6eeca723-e236-4140-b76f-6753113f86d9",
+      "name": "Webhook",
+      "webhookId": "93b1be4a-7e58-479d-a139-6d94e0583aea"
+    },
+    {
+      "parameters": {
+        "sendTo": "kushagra2310136@akgec.ac.in",
+        "subject": "=🎉 CRAWL COMPLETED SUCCESSFULLY\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📍 URL: {{ $json.body.url }}\n📦 Type: {{ $json.body.crawlType }}\n⚙️  Method: {{ $json.body.method }}\n📊 STATISTICS\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n• Total Pages: {{ $json.body.stats.totalPages }}\n• Links Found: {{ $json.body.stats.linksFound }}\n• Duration: {{ $json.body.stats.duration }}ms\n⏱️  METHOD BREAKDOWN\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🕐 Crawled at: {{ $json.body.timestamp }}",
+        "emailType": "text",
+        "message": "Crawl Notification",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        304,
+        -16
+      ],
+      "id": "f87ecdf5-6195-4706-a848-49b8d68e92cc",
+      "name": "Send a message",
+      "webhookId": "0dbaabb2-1db2-4763-b7f3-0dca293c59aa",
+      "alwaysOutputData": false,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "8LfSsMBZF7sAOMcg",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "7c92740c-8bda-40fb-8cb0-b54d65f6678b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e1e49c22736ab6d23f1c6aa914ac555646fb911ea99926594f950749b61bbd0b"
+  },
+  "id": "zX3IwT341qdR2MGI",
+  "tags": []
+}
