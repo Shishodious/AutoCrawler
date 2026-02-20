@@ -10,6 +10,7 @@ const { intelligentCrawl, recursiveCrawl } = require('../utils/hybridCrawler');
 const { getErrorType } = require('../utils/errorHandler');
 const { emitCrawlEvent } = require('../services/socketService');
 const extractSocketId = require('../middleware/socketIdMiddleware');
+const authMiddleware = require('../middleware/authMiddleware');
 const { triggerSingleCrawl, triggerRecursiveCrawl } = require('../utils/n8nTrigger');
 //only 2 routes need to extract socket id
 const { 
@@ -22,13 +23,13 @@ const {
 // ============================================
 // POST /api/crawl - Start Hybrid Crawl
 // ============================================
-router.post('/crawl', extractSocketId, async (req, res) => {
+router.post('/crawl', authMiddleware, extractSocketId, async (req, res) => {
   try {
     // Validate request body
     const validationResult = crawlRequestSchema.safeParse(req.body);
     
     if (!validationResult.success) {
-      const errors = validationResult.error.errors.map(err => ({
+      const errors = validationResult.error.issues.map(err => ({
         field: err.path.join('.'),
         message: err.message
       }));
@@ -184,7 +185,7 @@ router.post('/crawl', extractSocketId, async (req, res) => {
 // ============================================
 // POST /api/crawl/recursive - Start Recursive Crawl
 // ============================================
-router.post('/crawl/recursive', extractSocketId, async (req, res) => {
+router.post('/crawl/recursive', authMiddleware, extractSocketId, async (req, res) => {
   try {
     // Validate request body
     const validationResult = recursiveCrawlRequestSchema.safeParse(req.body);
@@ -343,7 +344,7 @@ router.post('/crawl/recursive', extractSocketId, async (req, res) => {
 // ============================================
 // GET /api/sites - Fetch All Crawls with Filters
 // ============================================
-router.get('/sites', async (req, res) => {
+router.get('/sites', authMiddleware, async (req, res) => {
   try {
     // Validate query parameters
     const validationResult = siteDataQuerySchema.safeParse(req.query);
@@ -352,7 +353,7 @@ router.get('/sites', async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'Invalid query parameters',
-        details: validationResult.error.errors
+        details: validationResult.error.issues
       });
     }
 
@@ -371,13 +372,12 @@ router.get('/sites', async (req, res) => {
     const order = req.query.order === 'asc' ? 1 : -1;
     const search = req.query.search || '';
 
-    // Build query
-    const query = {};
+    // Build query — always scope to the logged-in user
+    const query = { userId: req.user.id };
     if (url) query.url = url;
     if (crawlSuccess !== undefined) query.crawlSuccess = crawlSuccess;
     if (method) query['crawlerStats.method'] = method;
     if (errorType) query.errorType = errorType;
-    if (userId) query.userId = userId;
     if (search) {
       query.$or = [
         { url: { $regex: search, $options: 'i' } },
@@ -472,32 +472,45 @@ router.get('/sites/:id', async (req, res) => {
 // ============================================
 // GET /api/stats - Crawl Statistics
 // ============================================
-router.get('/stats', async (req, res) => {
+router.get('/stats', authMiddleware, async (req, res) => {
   try {
-    // Get overall stats using static method
-    const overallStats = await SiteData.getCrawlStats();
+    const userFilter = { userId: req.user.id };
 
-    // Get method breakdown
+    // Per-user overall stats
+    const total = await SiteData.countDocuments(userFilter);
+    const successful = await SiteData.countDocuments({ ...userFilter, crawlSuccess: true });
+    const failed = await SiteData.countDocuments({ ...userFilter, crawlSuccess: false });
+
+    const avgDurationResult = await SiteData.aggregate([
+      { $match: { ...userFilter, crawlSuccess: true } },
+      { $group: { _id: null, avgDuration: { $avg: '$crawlerStats.duration' } } }
+    ]);
+
+    const overallStats = {
+      total,
+      successful,
+      failed,
+      successRate: total > 0 ? ((successful / total) * 100).toFixed(2) + '%' : '0%',
+      avgDuration: avgDurationResult.length > 0 ? avgDurationResult[0].avgDuration : 0
+    };
+
+    // Per-user method breakdown
     const methodBreakdown = await SiteData.aggregate([
+      { $match: userFilter },
       { $group: { _id: '$crawlerStats.method', count: { $sum: 1 } } }
     ]);
 
-    // Get error breakdown
+    // Per-user error breakdown
     const errorBreakdown = await SiteData.aggregate([
-      { $match: { crawlSuccess: false } },
+      { $match: { ...userFilter, crawlSuccess: false } },
       { $group: { _id: '$errorType', count: { $sum: 1 } } }
     ]);
 
-    // Format breakdowns
     const methodStats = {};
-    methodBreakdown.forEach(item => {
-      methodStats[item._id] = item.count;
-    });
+    methodBreakdown.forEach(item => { methodStats[item._id] = item.count; });
 
     const errorStats = {};
-    errorBreakdown.forEach(item => {
-      errorStats[item._id] = item.count;
-    });
+    errorBreakdown.forEach(item => { errorStats[item._id] = item.count; });
 
     res.status(200).json({
       success: true,
@@ -521,12 +534,29 @@ router.get('/stats', async (req, res) => {
 // ============================================
 // DELETE /api/sites/:id - Delete Crawl
 // ============================================
-router.delete('/sites/:id', async (req, res) => {
+router.delete('/sites/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Find first to check ownership
+    const site = await SiteData.findById(id);
+    if (!site) {
+      return res.status(404).json({
+        success: false,
+        error: 'Site not found',
+        details: `No crawl data found with ID: ${id}`
+      });
+    }
+
+    // Prevent cross-user deletions
+    if (site.userId?.toString() !== req.user.id.toString()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden. You can only delete your own crawls.'
+      });
+    }
+
     const deletedSite = await SiteData.findByIdAndDelete(id);
-    
     if (!deletedSite) {
       return res.status(404).json({
         success: false,
@@ -568,7 +598,7 @@ router.delete('/sites/:id', async (req, res) => {
 // ============================================
 // GET /api/crawl/sessions/:sessionId - Get Crawl Session
 // ============================================
-router.get('/crawl/sessions/:sessionId', async (req, res) => {
+router.get('/crawl/sessions/:sessionId', authMiddleware, async (req, res) => {
   try {
     const { sessionId } = req.params;
 
@@ -581,8 +611,8 @@ router.get('/crawl/sessions/:sessionId', async (req, res) => {
       });
     }
 
-    // Find all pages from this crawl session
-    const pages = await SiteData.find({ crawlSessionId: sessionId })
+    // Find all pages from this crawl session — scoped to the logged-in user
+    const pages = await SiteData.find({ crawlSessionId: sessionId, userId: req.user.id })
       .sort({ 'crawlerStats.depth': 1, createdAt: 1 })
       .select('-__v');
     

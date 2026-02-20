@@ -22,15 +22,18 @@ async function triggerN8nWebhook(crawlData) {
   const n8nEnabled = process.env.N8N_ENABLED === 'true';
   const webhookUrl = process.env.N8N_WEBHOOK_URL;
 
-  if (!n8nEnabled) {
-    console.log('[n8n] Integration disabled (N8N_ENABLED=false)');
+  // Early return if n8n is not enabled
+  if (!n8nEnabled || !webhookUrl) {
+    if (!n8nEnabled) {
+      console.log('[n8n] Integration disabled (N8N_ENABLED is not set to "true")');
+    }
+    if (!webhookUrl) {
+      console.log('[n8n] Webhook URL not configured (N8N_WEBHOOK_URL is not set)');
+    }
     return;
   }
 
-  if (!webhookUrl) {
-    console.warn('[n8n] Webhook URL not configured (N8N_WEBHOOK_URL missing)');
-    return;
-  }
+  console.log('[n8n] Integration enabled, preparing to send webhook...');
 
   // Prepare payload
   const payload = {
