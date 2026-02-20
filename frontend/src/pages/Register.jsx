@@ -1,16 +1,15 @@
 import React, { useState } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import api from '../api';
-import { Lock, Eye, EyeOff } from 'lucide-react';
+import { UserPlus, Eye, EyeOff } from 'lucide-react';
 
-const Login = () => {
+const Register = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation();
-  const justRegistered = location.state?.registered;
 
   React.useEffect(() => {
     if (localStorage.getItem('token')) {
@@ -18,15 +17,18 @@ const Login = () => {
     }
   }, [navigate]);
 
-  const handleLogin = async (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
+    setError('');
+    setLoading(true);
     try {
-      const response = await api.post('/auth/login', { username, password });
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
-      navigate('/');
+      await api.post('/auth/register', { username, password });
+      // On success, redirect to login so user can sign in
+      navigate('/login', { state: { registered: true } });
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed');
+      setError(err.response?.data?.error || 'Registration failed');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -35,21 +37,16 @@ const Login = () => {
       <div className="bg-dark-light p-8 rounded-xl shadow-2xl w-full max-w-md border border-gray-700">
         <div className="flex justify-center mb-6">
           <div className="bg-primary/20 p-4 rounded-full">
-            <Lock className="w-8 h-8 text-primary" />
+            <UserPlus className="w-8 h-8 text-primary" />
           </div>
         </div>
-        <h2 className="text-2xl font-bold text-center mb-6 text-white">Welcome Back</h2>
-        {justRegistered && (
-          <div className="bg-green-900/20 border border-green-500/50 text-green-200 p-3 rounded mb-4 text-sm text-center">
-            Account created! Please log in.
-          </div>
-        )}
+        <h2 className="text-2xl font-bold text-center mb-6 text-white">Create Account</h2>
         {error && (
           <div className="bg-red-900/20 border border-red-500/50 text-red-200 p-3 rounded mb-4 text-sm text-center">
             {error}
           </div>
         )}
-        <form onSubmit={handleLogin} className="space-y-4">
+        <form onSubmit={handleRegister} className="space-y-4">
           <div>
             <label className="block text-gray-400 text-sm mb-1">Username</label>
             <input
@@ -81,15 +78,16 @@ const Login = () => {
           </div>
           <button
             type="submit"
-            className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-2 rounded-lg font-semibold transition-colors mt-4"
+            disabled={loading}
+            className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-2 rounded-lg font-semibold transition-colors mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Login
+            {loading ? 'Creating Account...' : 'Register'}
           </button>
         </form>
         <p className="text-center text-gray-400 text-sm mt-6">
-          Don&apos;t have an account?{' '}
-          <Link to="/register" className="text-indigo-400 hover:text-indigo-300 font-medium">
-            Register
+          Already have an account?{' '}
+          <Link to="/login" className="text-indigo-400 hover:text-indigo-300 font-medium">
+            Login
           </Link>
         </p>
       </div>
@@ -97,4 +95,4 @@ const Login = () => {
   );
 };
 
-export default Login;
+export default Register;

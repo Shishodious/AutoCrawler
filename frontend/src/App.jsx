@@ -6,6 +6,7 @@ import History from './pages/History';
 import SessionDetails from './pages/SessionDetails';
 import Stats from './pages/Stats';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import AuthGate from './components/AuthGate';
 import { disconnectSocket } from './services/socket';
 
@@ -52,6 +53,7 @@ function App() {
         <Navbar />
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
           <Route
             path="/"
             element={

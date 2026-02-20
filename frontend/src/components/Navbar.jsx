@@ -14,8 +14,6 @@ const Navbar = () => {
     navigate('/login');
   };
 
-  // if (!token) return null;
-
   return (
     <nav className="bg-dark-light border-b border-gray-700 p-4">
       <div className="container mx-auto flex justify-between items-center">
@@ -23,18 +21,20 @@ const Navbar = () => {
           <Activity className="w-8 h-8" />
           AutoCrawler
         </Link>
-        <div className="flex items-center gap-6">
-          <Link to="/" className="hover:text-primary transition-colors">Crawl</Link>
-          <Link to="/history" className="hover:text-primary transition-colors flex items-center gap-1">
-            <History className="w-4 h-4" /> History
-          </Link>
-          <Link to="/stats" className="hover:text-primary transition-colors flex items-center gap-1">
-            <BarChart3 className="w-4 h-4" /> Stats
-          </Link>
-          <button onClick={handleLogout} className="text-red-400 hover:text-red-300 flex items-center gap-1">
-            <LogOut className="w-4 h-4" /> Logout
-          </button>
-        </div>
+        {token && (
+          <div className="flex items-center gap-6">
+            <Link to="/" className="hover:text-primary transition-colors">Crawl</Link>
+            <Link to="/history" className="hover:text-primary transition-colors flex items-center gap-1">
+              <History className="w-4 h-4" /> History
+            </Link>
+            <Link to="/stats" className="hover:text-primary transition-colors flex items-center gap-1">
+              <BarChart3 className="w-4 h-4" /> Stats
+            </Link>
+            <button onClick={handleLogout} className="text-red-400 hover:text-red-300 flex items-center gap-1">
+              <LogOut className="w-4 h-4" /> Logout
+            </button>
+          </div>
+        )}
       </div>
     </nav>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { startCrawl, startRecursiveCrawl } from '../api';
 import { Play, Loader2, Link as LinkIcon, Wifi, WifiOff, ExternalLink } from 'lucide-react';
@@ -13,6 +13,8 @@ const Home = () => {
   const [result, setResult] = useState(null);
   const [recursiveResult, setRecursiveResult] = useState(null);
   const [error, setError] = useState(null);
+  const [lastCrawledUrl, setLastCrawledUrl] = useState(''); // Track last successfully crawled URL
+  const crawlingUrlRef = useRef(''); // Ref to track the URL being crawled (for event handlers)
   
   // Socket.IO states
   const [isConnected, setIsConnected] = useState(false);
@@ -104,6 +106,7 @@ const Home = () => {
           console.log('✅ Crawl complete:', data);
           setCrawlStatus('complete');
           setCrawlStats(data);
+          setLastCrawledUrl(crawlingUrlRef.current); // Save the successfully crawled URL from ref
           setSocketMessages(prev => [...prev, `Crawl complete: ${data.totalPages} pages`]);
         };
         
@@ -175,6 +178,9 @@ const Home = () => {
   const handleCrawl = async (e) => {
     e.preventDefault();
     if (!url) return;
+
+    // Save the URL being crawled to ref for event handlers
+    crawlingUrlRef.current = url;
 
     setLoading(true);
     setError(null);
@@ -316,7 +322,7 @@ const Home = () => {
             className="bg-primary hover:bg-indigo-600 text-white px-8 py-3 rounded-lg font-semibold flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? <Loader2 className="animate-spin" /> : <Play className="w-5 h-5" />}
-            Crawl
+            {crawlStatus === 'complete' && url === lastCrawledUrl && url !== '' ? 'Re-crawl' : 'Crawl'}
           </button>
         </form>
 
