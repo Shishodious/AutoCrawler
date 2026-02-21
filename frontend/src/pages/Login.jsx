@@ -39,6 +39,19 @@ const Login = () => {
           </div>
         </div>
         <h2 className="text-2xl font-bold text-center mb-6 text-white">Welcome Back</h2>
+        <div className="mb-6 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-lg p-3 text-center">
+  <p className="text-xs uppercase tracking-wider text-indigo-400 mb-1">
+    Demo Credentials
+  </p>
+  <p className="text-sm text-gray-300">
+    <span className="font-medium text-white">Username:</span>{" "}
+    <span className="text-indigo-400 font-semibold">priyanshu</span>
+  </p>
+  <p className="text-sm text-gray-300">
+    <span className="font-medium text-white">Password:</span>{" "}
+    <span className="text-indigo-400 font-semibold">Priyanshu1@</span>
+  </p>
+</div>
         {justRegistered && (
           <div className="bg-green-900/20 border border-green-500/50 text-green-200 p-3 rounded mb-4 text-sm text-center">
             Account created! Please log in.
