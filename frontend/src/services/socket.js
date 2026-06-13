@@ -7,7 +7,7 @@ let socket = null;
  */
 export const initSocket = (token) => {
   if (!socket) {
-    socket = io("http://localhost:8000", {
+    socket = io("https://autocrawler-1.onrender.com", {
       transports: ["websocket"],
     
       autoConnect: false,
