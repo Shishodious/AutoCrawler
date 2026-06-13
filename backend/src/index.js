@@ -10,7 +10,7 @@ const passport = require('passport');
 
 // Middleware
 app.use(cors({
-  origin: "https://auto-crawler.vercel.app",
+  origin: ["https://auto-crawler.vercel.app", "http://localhost:5173"],
   credentials: true
 }));
 app.use(express.json());

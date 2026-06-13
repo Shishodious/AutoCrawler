@@ -430,17 +430,25 @@ router.get('/sites', authMiddleware, async (req, res) => {
 // ============================================
 // GET /api/sites/:id - Fetch Single Crawl
 // ============================================
-router.get('/sites/:id', async (req, res) => {
+router.get('/sites/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
 
     const site = await SiteData.findById(id).select('-__v');
-    
+
     if (!site) {
       return res.status(404).json({
         success: false,
         error: 'Site not found',
         details: `No crawl data found with ID: ${id}`
+      });
+    }
+
+    // Prevent cross-user access — only the owner may view a crawl
+    if (site.userId?.toString() !== req.user.id.toString()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden. You can only view your own crawls.'
       });
     }
 

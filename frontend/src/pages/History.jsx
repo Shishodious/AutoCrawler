@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getSites, deleteSite } from '../api';
-import { Calendar, ExternalLink, Trash2, Layers } from 'lucide-react';
+import { History as HistoryIcon, ExternalLink, Trash2, Layers, Link2, Clock, Gauge, Zap, ArrowRight } from 'lucide-react';
 import FilterBar from '../components/FilterBar';
 import Pagination from '../components/Pagination';
 import ConfirmModal from '../components/ConfirmModal';
@@ -17,7 +17,7 @@ const History = () => {
     total: 0,
     hasMore: false
   });
-  
+
   const [filters, setFilters] = useState({
     search: '',
     method: '',
@@ -41,7 +41,7 @@ const History = () => {
   const fetchHistory = async () => {
     try {
       setLoading(true);
-      
+
       // Build query params
       const params = {
         limit: ITEMS_PER_PAGE,
@@ -54,17 +54,14 @@ const History = () => {
       if (filters.search) params.search = filters.search;
       if (filters.method) params.method = filters.method;
       if (filters.crawlSuccess) params.crawlSuccess = filters.crawlSuccess;
-      
-      // Handle crawl type filter (single vs session)
-      // Note: This is a client-side filter since backend doesn't have this specific filter
-      
+
       const response = await getSites(params);
-      
+
       let fetchedCrawls = response.data.data || [];
-      
+
       // Group recursive crawl sessions
       const groupedCrawls = groupRecursiveSessions(fetchedCrawls);
-      
+
       // Apply crawl type filter
       let filteredCrawls = groupedCrawls;
       if (filters.crawlType === 'single') {
@@ -72,7 +69,7 @@ const History = () => {
       } else if (filters.crawlType === 'session') {
         filteredCrawls = groupedCrawls.filter(c => c.isSession);
       }
-      
+
       // Apply date filters
       if (filters.dateFrom || filters.dateTo) {
         filteredCrawls = filteredCrawls.filter(crawl => {
@@ -82,7 +79,7 @@ const History = () => {
           return true;
         });
       }
-      
+
       setCrawls(filteredCrawls);
       setPagination(prev => ({
         ...prev,
@@ -100,7 +97,7 @@ const History = () => {
   const groupRecursiveSessions = (crawls) => {
     const sessions = {};
     const singles = [];
-    
+
     crawls.forEach(crawl => {
       if (crawl.crawlSessionId) {
         if (!sessions[crawl.crawlSessionId]) {
@@ -119,7 +116,7 @@ const History = () => {
         singles.push({ ...crawl, isSession: false });
       }
     });
-    
+
     return [...Object.values(sessions), ...singles];
   };
 
@@ -152,10 +149,10 @@ const History = () => {
 
   const handleDeleteConfirm = async () => {
     if (!itemToDelete) return;
-    
+
     try {
       setDeleting(true);
-      
+
       if (itemToDelete.isSession) {
         // Delete all pages in the session
         for (const page of itemToDelete.pages) {
@@ -165,7 +162,7 @@ const History = () => {
         // Delete single crawl
         await deleteSite(itemToDelete._id);
       }
-      
+
       // Refresh the list
       await fetchHistory();
       setDeleteModalOpen(false);
@@ -184,102 +181,114 @@ const History = () => {
 
   if (loading && crawls.length === 0) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
+      <div className="container mx-auto px-6 py-10 max-w-6xl">
+        <div className="h-9 w-56 rounded-lg bg-dark-light shimmer mb-8" />
+        <div className="space-y-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-40 rounded-2xl bg-dark-light shimmer" />
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-6xl">
-      <h1 className="text-3xl font-bold mb-8 text-white flex items-center gap-3">
-        <Calendar className="w-8 h-8 text-primary" />
-        Crawl History
-      </h1>
+    <div className="container mx-auto px-6 py-10 max-w-6xl">
+      {/* Header */}
+      <div className="mb-8 flex items-center gap-3 animate-fade-in">
+        <span className="grid place-items-center w-11 h-11 rounded-xl bg-primary/15 border border-primary/25">
+          <HistoryIcon className="w-6 h-6 text-primary-soft" />
+        </span>
+        <div>
+          <h1 className="text-3xl font-extrabold tracking-tight text-white">Crawl history</h1>
+          <p className="text-sm text-gray-400">Browse, filter and manage every crawl you&apos;ve run.</p>
+        </div>
+      </div>
 
       {/* Filter Bar */}
-      <FilterBar 
+      <FilterBar
         filters={filters}
         onFilterChange={handleFilterChange}
         onReset={handleResetFilters}
       />
 
       {/* Results Count */}
-      <div className="mb-4 text-gray-400 text-sm">
-        {loading ? 'Loading...' : `Showing ${crawls.length} result${crawls.length !== 1 ? 's' : ''}`}
+      <div className="mb-4 text-sm text-gray-500">
+        {loading ? 'Loading…' : `Showing ${crawls.length} result${crawls.length !== 1 ? 's' : ''}`}
       </div>
 
       {/* Crawls List */}
-      <div className="grid gap-6">
+      <div className="grid gap-5 stagger">
         {crawls.map((crawl) => (
-          <div 
-            key={crawl._id} 
-            className="bg-dark-light rounded-xl p-6 border border-gray-700 hover:border-primary/30 transition-colors"
+          <div
+            key={crawl._id}
+            className="glass-card card-hover rounded-2xl p-6"
           >
-            <div className="flex flex-col md:flex-row justify-between gap-4 mb-4">
-              <div className="flex-1">
+            <div className="mb-4 flex flex-col justify-between gap-4 md:flex-row">
+              <div className="min-w-0 flex-1">
                 {/* Session Badge */}
                 {crawl.isSession && (
-                  <div className="inline-flex items-center gap-2 bg-primary/20 text-primary px-3 py-1 rounded-full text-xs font-semibold mb-2">
+                  <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/15 px-3 py-1 text-xs font-semibold text-primary-soft">
                     <Layers className="w-3 h-3" />
-                    Recursive Session ({crawl.pageCount} pages)
+                    Recursive session · {crawl.pageCount} pages
                   </div>
                 )}
-                
-                <h3 className="text-xl font-semibold text-white mb-1">{crawl.title.length > 25
-                    ? crawl.title.slice(0, 10) + '...'
-                    : crawl.title}</h3>
-                <a 
-                  href={crawl.url} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="text-primary hover:underline flex items-center gap-1 text-sm"
+
+                <h3 className="truncate text-lg font-semibold text-white" title={crawl.title}>
+                  {crawl.title || 'Untitled page'}
+                </h3>
+                <a
+                  href={crawl.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-0.5 flex items-center gap-1 truncate text-sm text-primary-soft hover:text-white transition-colors"
                 >
-                  {crawl.url} <ExternalLink className="w-3 h-3" />
+                  <span className="truncate">{crawl.url}</span>
+                  <ExternalLink className="w-3 h-3 flex-shrink-0" />
                 </a>
               </div>
-              
+
               <div className="flex items-start gap-3">
-                <div className="text-gray-400 text-sm font-mono text-right">
+                <div className="text-right font-mono text-xs text-gray-500">
                   {new Date(crawl.createdAt).toLocaleString()}
                 </div>
                 <button
                   onClick={() => handleDeleteClick(crawl)}
-                  className="text-red-400 hover:text-red-300 transition-colors p-2 hover:bg-red-900/20 rounded-lg"
+                  className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-danger/10 hover:text-danger"
                   title="Delete"
                 >
-                  <Trash2 className="w-5 h-5" />
+                  <Trash2 className="w-[18px] h-[18px]" />
                 </button>
               </div>
             </div>
-            
+
             {/* Quick Stats */}
-            <div className="bg-dark rounded-lg p-4 border border-gray-800 mb-4">
-              <div className="flex flex-wrap gap-4 text-sm">
-                <div>
-                  <span className="text-gray-500">Method:</span>
-                  <span className={`ml-2 font-mono ${
-                    crawl.crawlerStats?.method === 'axios' ? 'text-green-400' : 'text-blue-400'
-                  }`}>
-                    {crawl.crawlerStats?.method || 'N/A'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Links:</span>
-                  <span className="text-gray-300 ml-2 font-mono">{crawl.links?.length || 0}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Duration:</span>
-                  <span className="text-gray-300 ml-2 font-mono">{crawl.crawlerStats?.duration || 0}ms</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Status:</span>
-                  <span className={`ml-2 font-mono ${
-                    crawl.crawlSuccess ? 'text-green-400' : 'text-red-400'
-                  }`}>
-                    {crawl.crawlSuccess ? 'Success' : 'Failed'}
-                  </span>
-                </div>
+            <div className="mb-4 flex flex-wrap gap-x-6 gap-y-2 rounded-xl border border-hairline bg-dark/50 p-4 text-sm">
+              <div className="flex items-center gap-1.5">
+                <Zap className="w-4 h-4 text-gray-500" />
+                <span className="text-gray-500">Method</span>
+                <span className={`font-mono ${
+                  crawl.crawlerStats?.method === 'axios' ? 'text-success' : 'text-accent'
+                }`}>
+                  {crawl.crawlerStats?.method || 'N/A'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Link2 className="w-4 h-4 text-gray-500" />
+                <span className="text-gray-500">Links</span>
+                <span className="font-mono text-gray-300">{crawl.links?.length || 0}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-gray-500" />
+                <span className="text-gray-500">Duration</span>
+                <span className="font-mono text-gray-300">{crawl.crawlerStats?.duration || 0}ms</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Gauge className="w-4 h-4 text-gray-500" />
+                <span className="text-gray-500">Status</span>
+                <span className={`font-mono ${crawl.crawlSuccess ? 'text-success' : 'text-danger'}`}>
+                  {crawl.crawlSuccess ? 'Success' : 'Failed'}
+                </span>
               </div>
             </div>
 
@@ -287,9 +296,10 @@ const History = () => {
             {crawl.isSession ? (
               <button
                 onClick={() => handleSessionClick(crawl.sessionId)}
-                className="w-full bg-primary/20 hover:bg-primary/30 text-primary py-2 rounded-lg font-medium transition-colors"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 py-2.5 font-medium text-primary-soft transition-colors hover:bg-primary/20"
               >
-                View Session Details
+                View session details
+                <ArrowRight className="w-4 h-4" />
               </button>
             ) : (
               <CrawlDetailsExpand
@@ -304,13 +314,15 @@ const History = () => {
 
       {/* Empty State */}
       {crawls.length === 0 && !loading && (
-        <div className="text-center py-12 bg-dark-light rounded-xl border border-gray-700">
-          <Calendar className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-400 mb-2">No Crawls Found</h3>
+        <div className="glass-card rounded-2xl py-16 text-center animate-fade-in">
+          <span className="mx-auto mb-4 grid place-items-center w-16 h-16 rounded-2xl bg-dark/60 border border-hairline">
+            <HistoryIcon className="w-8 h-8 text-gray-600" />
+          </span>
+          <h3 className="text-xl font-semibold text-gray-300 mb-2">No crawls found</h3>
           <p className="text-gray-500">
-            {Object.values(filters).some(v => v !== '') 
-              ? 'Try adjusting your filters' 
-              : 'Start crawling websites to see them here'}
+            {Object.values(filters).some(v => v !== '')
+              ? 'Try adjusting your filters.'
+              : 'Start crawling websites to see them here.'}
           </p>
         </div>
       )}
@@ -333,7 +345,7 @@ const History = () => {
           setItemToDelete(null);
         }}
         onConfirm={handleDeleteConfirm}
-        title="Delete Crawl"
+        title="Delete crawl"
         message={
           itemToDelete?.isSession
             ? `Are you sure you want to delete this recursive crawl session with ${itemToDelete.pageCount} pages? This action cannot be undone.`

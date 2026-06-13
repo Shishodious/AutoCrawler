@@ -3,8 +3,9 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const passport = require('passport');
 const User = require('../models/User');
+const { JWT_SECRET } = require('../config/jwt');
 
-const { registerSchema } = require('../utils/validation');
+const { registerSchema, loginSchema } = require('../utils/validation');
 
 // Register
 router.post('/register', async (req, res) => {
@@ -36,11 +37,15 @@ router.post('/register', async (req, res) => {
 
 // Login
 router.post('/login', async (req, res) => {
-  const { username, password } = req.body;
+  // Validate input — ensures username/password are strings, preventing
+  // NoSQL operator injection (e.g. { username: { $ne: null } }).
+  const validationResult = loginSchema.safeParse(req.body);
 
-  if (!username || !password) {
+  if (!validationResult.success) {
     return res.status(400).json({ error: 'Username and password are required' });
   }
+
+  const { username, password } = validationResult.data;
 
   try {
     const user = await User.findOne({ username });
@@ -54,7 +59,7 @@ router.post('/login', async (req, res) => {
     }
 
     const payload = { id: user.id, username: user.username };
-    const token = jwt.sign(payload, process.env.JWT_SECRET || 'your_jwt_secret_key', {
+    const token = jwt.sign(payload, JWT_SECRET, {
       expiresIn: '1h'
     });
 

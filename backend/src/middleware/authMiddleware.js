@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { JWT_SECRET } = require('../config/jwt');
 
 /**
  * Express middleware to verify JWT token from Authorization header.
@@ -18,7 +19,7 @@ const authMiddleware = async (req, res, next) => {
       token = token.substring(7);
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    const decoded = jwt.verify(token, JWT_SECRET);
 
     const user = await User.findById(decoded.id).select('-password');
     if (!user) {

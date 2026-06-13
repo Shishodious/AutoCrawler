@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { JWT_SECRET } = require('../config/jwt');
 
 /**
  * Socket.IO authentication middleware
@@ -20,7 +21,7 @@ const socketAuth = async (socket, next) => {
     }
 
     // Verify JWT token using the same secret as Passport
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret_key');
+    const decoded = jwt.verify(token, JWT_SECRET);
 
     // Find user in database
     const user = await User.findById(decoded.id);

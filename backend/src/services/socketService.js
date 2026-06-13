@@ -17,7 +17,7 @@ const initializeSocket = (server) => {
   // Initialize Socket.IO with server
   io = socketIO(server, {
     cors: {
-      origin: "https://auto-crawler.vercel.app",
+      origin: ["https://auto-crawler.vercel.app", "http://localhost:5173"],
       methods: ["GET", "POST"],
       credentials: true
     },

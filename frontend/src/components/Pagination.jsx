@@ -1,47 +1,39 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-const Pagination = ({ 
-  currentPage, 
-  totalPages, 
-  onPageChange, 
-  hasMore = false 
+const Pagination = ({
+  currentPage,
+  totalPages,
+  onPageChange,
+  hasMore = false
 }) => {
   const canGoPrevious = currentPage > 1;
   const canGoNext = currentPage < totalPages || hasMore;
 
+  const btnClass =
+    "flex items-center gap-1.5 rounded-xl border border-hairline bg-dark/60 px-4 py-2 text-sm font-medium text-white transition-colors hover:border-primary/50 hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-hairline disabled:hover:bg-dark/60";
+
   return (
-    <div className="flex items-center justify-center gap-4 mt-6">
-      {/* Previous Button */}
-      <button
-        onClick={() => onPageChange(currentPage - 1)}
-        disabled={!canGoPrevious}
-        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-dark border border-gray-700 hover:border-primary/50 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-700"
-      >
+    <div className="mt-8 flex items-center justify-center gap-4">
+      <button onClick={() => onPageChange(currentPage - 1)} disabled={!canGoPrevious} className={btnClass}>
         <ChevronLeft className="w-4 h-4" />
         Previous
       </button>
 
-      {/* Page Info */}
-      <div className="flex items-center gap-2">
-        <span className="text-gray-400">Page</span>
-        <span className="bg-primary/20 text-primary px-3 py-1 rounded-lg font-mono font-semibold">
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-gray-500">Page</span>
+        <span className="rounded-lg bg-primary/15 px-3 py-1 font-mono font-semibold text-primary-soft">
           {currentPage}
         </span>
         {totalPages > 0 && (
           <>
-            <span className="text-gray-400">of</span>
-            <span className="text-white font-mono font-semibold">{totalPages}</span>
+            <span className="text-gray-500">of</span>
+            <span className="font-mono font-semibold text-white">{totalPages}</span>
           </>
         )}
       </div>
 
-      {/* Next Button */}
-      <button
-        onClick={() => onPageChange(currentPage + 1)}
-        disabled={!canGoNext}
-        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-dark border border-gray-700 hover:border-primary/50 text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-700"
-      >
+      <button onClick={() => onPageChange(currentPage + 1)} disabled={!canGoNext} className={btnClass}>
         Next
         <ChevronRight className="w-4 h-4" />
       </button>
