@@ -11,6 +11,12 @@ const registerSchema = z.object({
     .regex(/[!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one special character")
 });
 
+// User login schema — enforces string types to block NoSQL operator injection
+const loginSchema = z.object({
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required")
+});
+
 // URL validation schema
 const urlSchema = z.string().url("Invalid URL format").trim();
 
@@ -131,8 +137,9 @@ const recursiveCrawlRequestSchema = z.object({
   }).optional().default({})
 });
 
-module.exports = { 
+module.exports = {
   registerSchema,
+  loginSchema,
   urlSchema,
   metadataSchema,
   crawlerStatsSchema,
