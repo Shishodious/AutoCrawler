@@ -1,10 +1,11 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Waypoints, Telescope, History, BarChart3, LogOut } from 'lucide-react';
+import { Waypoints, Telescope, Wand2, History, BarChart3, LogOut } from 'lucide-react';
 import { disconnectSocket } from "../services/socket";
 
 const navItems = [
   { to: '/', label: 'Crawl', icon: Telescope, end: true },
+  { to: '/extract', label: 'Extract', icon: Wand2 },
   { to: '/history', label: 'History', icon: History },
   { to: '/stats', label: 'Stats', icon: BarChart3 },
 ];

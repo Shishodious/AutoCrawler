@@ -69,6 +69,28 @@ export const getCrawlJob = (jobId) =>
   api.get(`/crawl/jobs/${jobId}`);
 
 // ============================================
+// Extraction Operations
+// ============================================
+export const startExtract = async (payload, socketId = null) => {
+  const headers = { 'Content-Type': 'application/json' };
+  if (socketId) headers['X-Socket-ID'] = socketId;
+  const response = await api.post('/extract', payload, { headers });
+  return response.data;
+};
+
+export const getExtractTemplates = () => api.get('/extract/templates');
+export const createExtractTemplate = (payload) => api.post('/extract/templates', payload);
+export const deleteExtractTemplate = (id) => api.delete(`/extract/templates/${id}`);
+
+// Report/export — returns the raw URL for downloads (auth via header interceptor for json;
+// for file downloads we fetch as blob)
+export const getReportUrl = (siteId, format) => `/sites/${siteId}/report?format=${format}`;
+export const downloadReport = (siteId, format) =>
+  api.get(`/sites/${siteId}/report?format=${format}`, {
+    responseType: format === 'json' ? 'json' : 'blob',
+  });
+
+// ============================================
 // Sites/History Operations
 // ============================================
 export const getSites = (params = {}) => 

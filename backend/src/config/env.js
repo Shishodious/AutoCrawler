@@ -17,6 +17,7 @@ const envSchema = z.object({
     .default('https://auto-crawler.vercel.app,http://localhost:5173'),
   CRAWL_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(3),
   LOG_LEVEL: z.string().default('info'),
+  LLM_MODEL: z.string().default('claude-sonnet-5'),
   N8N_ENABLED: z.string().optional(),
   N8N_WEBHOOK_URL: z.string().optional()
 });

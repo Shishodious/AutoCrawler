@@ -61,6 +61,9 @@ const createSiteDataSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(500, "Title cannot exceed 500 characters"),
   links: z.array(urlSchema).optional().default([]),
   metadata: metadataSchema,
+  // Extracted content + structured data are derived (not user input) — accept loosely
+  content: z.any().optional(),
+  structured: z.any().optional(),
   crawlerStats: crawlerStatsSchema,
   sslInfo: sslInfoSchema,
   retryCount: z.number().min(0, "Retry count cannot be negative").max(10, "Retry count cannot exceed 10").optional().default(0),
@@ -137,9 +140,40 @@ const recursiveCrawlRequestSchema = z.object({
   }).optional().default({})
 });
 
+// Extraction field descriptor
+const extractFieldSchema = z.object({
+  name: z.string().trim().min(1, "Field name is required").max(60),
+  type: z.enum(['string', 'number', 'boolean', 'string[]']).optional().default('string'),
+  description: z.string().max(200).optional()
+});
+
+// Extract request schema for POST /api/extract
+const extractRequestSchema = z.object({
+  url: urlSchema,
+  mode: z.enum(['auto', 'selectors', 'llm']).optional().default('auto'),
+  fields: z.array(extractFieldSchema).min(1, "At least one field is required").max(30).optional(),
+  selectors: z.record(z.string(), z.string()).optional(),
+  templateId: z.string().optional()
+}).refine(
+  (data) => data.templateId || data.fields || data.selectors,
+  { message: "Provide fields, selectors, or a templateId" }
+);
+
+// Save/create an extraction template
+const extractTemplateSchema = z.object({
+  name: z.string().trim().min(1, "Template name is required").max(100),
+  description: z.string().max(500).optional(),
+  domainPattern: z.string().max(200).optional(),
+  mode: z.enum(['auto', 'selectors', 'llm']).optional().default('auto'),
+  fields: z.array(extractFieldSchema).min(1, "At least one field is required").max(30),
+  selectors: z.record(z.string(), z.string()).optional()
+});
+
 module.exports = {
   registerSchema,
   loginSchema,
+  extractRequestSchema,
+  extractTemplateSchema,
   urlSchema,
   metadataSchema,
   crawlerStatsSchema,

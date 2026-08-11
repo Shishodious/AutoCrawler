@@ -255,7 +255,10 @@ async function crawlWithPuppeteer(url, options = {}) {
         
         // Extract page data
         const pageData = await extractPageData(page, url);
-        
+
+        // Capture the rendered HTML for the extraction pipeline (content + structured data)
+        const rawHtml = await page.content().catch(() => '');
+
         // Take screenshot if requested
         let screenshotPath = null;
         if (screenshot) {
@@ -273,6 +276,7 @@ async function crawlWithPuppeteer(url, options = {}) {
         return {
             success: true,
             ...pageData,
+            rawHtml,
             screenshot: screenshotPath,
             timestamp: new Date(),
             options: {

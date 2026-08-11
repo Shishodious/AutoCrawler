@@ -79,6 +79,27 @@ const siteDataSchema = new mongoose.Schema({
     }
   },
   
+  // Extracted readable content (Readability pass)
+  content: {
+    text: { type: String },
+    excerpt: { type: String, trim: true },
+    author: { type: String, trim: true },
+    siteName: { type: String, trim: true },
+    publishedTime: { type: String, trim: true },
+    wordCount: { type: Number, min: 0 },
+    headings: [{
+      tag: { type: String },
+      text: { type: String }
+    }],
+    images: [{ type: String }]
+  },
+
+  // Structured data the page embeds (JSON-LD, OpenGraph, Twitter cards)
+  structured: {
+    type: mongoose.Schema.Types.Mixed,
+    default: undefined
+  },
+
   // Crawler statistics
   crawlerStats: {
     method: {

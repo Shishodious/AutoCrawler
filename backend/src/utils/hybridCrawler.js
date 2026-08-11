@@ -31,7 +31,7 @@ function safeEmit(emitEvent, eventName, data, socketId) {
  * @param {Object} options - Crawling options
  * @returns {Promise<Object>} Unified crawl result
  */
-async function intelligentCrawl(url, options = {}) {
+async function intelligentCrawlCore(url, options = {}) {
     const {
         forceMethod = null,           // 'axios' or 'puppeteer' to override detection
         detectionThreshold = 0.5,     // Confidence threshold for Puppeteer
@@ -246,6 +246,45 @@ async function crawlWithPuppeteerWrapper(url, options, startTime, reason, emitEv
     }, socketId);
     
     return finalResult;
+}
+
+/**
+ * Public crawl entry point. Runs the hybrid crawl, then the extraction
+ * pipeline (content + structured data) over the raw HTML the crawl returned,
+ * attaching `pageContent` and `structured` to the result. Raw HTML is stripped
+ * from the returned object (it's large and not persisted) unless
+ * options.keepRawHtml is set (used by the /extract flow, which needs the DOM).
+ * @param {string} url
+ * @param {Object} options - options.extract=false skips extraction
+ * @returns {Promise<Object>} Unified crawl result with extraction attached
+ */
+async function intelligentCrawl(url, options = {}) {
+    const result = await intelligentCrawlCore(url, options);
+    if (!result) return result;
+
+    // Axios exposes raw HTML as `content`; Puppeteer as `rawHtml`.
+    const rawHtml = result.content || result.rawHtml || '';
+
+    if (result.success && rawHtml && options.extract !== false) {
+        try {
+            const { runExtractionPipeline } = require('./extractors');
+            const extracted = runExtractionPipeline(rawHtml, result.url || url);
+            result.pageContent = extracted.content;
+            result.structured = extracted.structured;
+        } catch (err) {
+            console.error(`[HYBRID] Extraction failed for ${url}: ${err.message}`);
+        }
+    }
+
+    if (options.keepRawHtml) {
+        result.rawHtml = rawHtml;
+    } else {
+        delete result.rawHtml;
+    }
+    // `content` on the axios path holds raw HTML — drop it from the public result
+    delete result.content;
+
+    return result;
 }
 
 /**

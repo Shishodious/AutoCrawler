@@ -4,15 +4,19 @@ const mongoose = require('mongoose');
 
 // Import models and utilities
 const SiteData = require('../models/SiteData');
+const ExtractTemplate = require('../models/ExtractTemplate');
 const { emitCrawlEvent } = require('../services/socketService');
 const extractSocketId = require('../middleware/socketIdMiddleware');
 const authMiddleware = require('../middleware/authMiddleware');
 const { enqueueCrawlJob, getCrawlQueue } = require('../queue/crawlQueue');
+const { buildReport, toMarkdown, renderPdf } = require('../utils/report/generateReport');
 //only 2 routes need to extract socket id
 const {
   crawlRequestSchema,
   recursiveCrawlRequestSchema,
-  siteDataQuerySchema
+  siteDataQuerySchema,
+  extractRequestSchema,
+  extractTemplateSchema
 } = require('../utils/validation');
 
 // ============================================
@@ -154,6 +158,100 @@ router.get('/crawl/jobs/:jobId', authMiddleware, async (req, res) => {
 });
 
 // ============================================
+// POST /api/extract - Schema-driven field extraction (enqueued)
+// ============================================
+router.post('/extract', authMiddleware, extractSocketId, async (req, res) => {
+  try {
+    const validationResult = extractRequestSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      const errors = validationResult.error.issues.map(err => ({
+        field: err.path.join('.'),
+        message: err.message
+      }));
+      return res.status(400).json({ success: false, error: 'Validation failed', details: errors });
+    }
+
+    let { url, mode, fields, selectors, templateId } = validationResult.data;
+
+    // A template supplies fields/selectors/mode when referenced
+    if (templateId) {
+      const template = await ExtractTemplate.findOne({ _id: templateId, userId: req.user?.id });
+      if (!template) {
+        return res.status(404).json({ success: false, error: 'Template not found' });
+      }
+      mode = mode || template.mode;
+      fields = fields || template.fields;
+      selectors = selectors || template.selectors;
+    }
+
+    const job = await enqueueCrawlJob('extract', {
+      url,
+      mode: mode || 'auto',
+      fields: fields || [],
+      selectors: selectors || null,
+      userId: req.user?.id || null,
+      socketId: req.socketId
+    });
+
+    emitCrawlEvent('crawl:queued', { jobId: job.id, url }, req.socketId);
+
+    res.status(202).json({
+      success: true,
+      jobId: job.id,
+      status: 'queued',
+      message: 'Extraction queued. Poll GET /api/crawl/jobs/:jobId for the result.'
+    });
+  } catch (error) {
+    console.error('[API] Failed to enqueue extraction:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to enqueue extraction',
+      details: { message: error.message }
+    });
+  }
+});
+
+// ============================================
+// Extraction Templates CRUD
+// ============================================
+router.get('/extract/templates', authMiddleware, async (req, res) => {
+  try {
+    const templates = await ExtractTemplate.find({ userId: req.user.id }).sort({ createdAt: -1 });
+    res.json({ success: true, data: templates });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to fetch templates' });
+  }
+});
+
+router.post('/extract/templates', authMiddleware, async (req, res) => {
+  try {
+    const validationResult = extractTemplateSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      const errors = validationResult.error.issues.map(err => ({
+        field: err.path.join('.'),
+        message: err.message
+      }));
+      return res.status(400).json({ success: false, error: 'Validation failed', details: errors });
+    }
+    const template = await ExtractTemplate.create({ ...validationResult.data, userId: req.user.id });
+    res.status(201).json({ success: true, data: template });
+  } catch (error) {
+    console.error('[API] Failed to create template:', error.message);
+    res.status(500).json({ success: false, error: 'Failed to create template' });
+  }
+});
+
+router.delete('/extract/templates/:id', authMiddleware, async (req, res) => {
+  try {
+    const deleted = await ExtractTemplate.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
+    if (!deleted) return res.status(404).json({ success: false, error: 'Template not found' });
+    res.json({ success: true, message: 'Template deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to delete template' });
+  }
+});
+
+// ============================================
 // GET /api/sites - Fetch All Crawls with Filters
 // ============================================
 router.get('/sites', authMiddleware, async (req, res) => {
@@ -286,6 +384,47 @@ router.get('/sites/:id', authMiddleware, async (req, res) => {
       error: 'Failed to fetch site',
       details: error.message
     });
+  }
+});
+
+// ============================================
+// GET /api/sites/:id/report - Report / export (json | md | pdf)
+// ============================================
+router.get('/sites/:id/report', authMiddleware, async (req, res) => {
+  try {
+    const format = (req.query.format || 'json').toLowerCase();
+    const site = await SiteData.findById(req.params.id).select('-__v');
+
+    if (!site) {
+      return res.status(404).json({ success: false, error: 'Site not found' });
+    }
+    if (site.userId?.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ success: false, error: 'Forbidden. You can only export your own crawls.' });
+    }
+
+    const report = buildReport(site);
+    const safeName = `report-${req.params.id}`;
+
+    if (format === 'md' || format === 'markdown') {
+      res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}.md"`);
+      return res.send(toMarkdown(report));
+    }
+
+    if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}.pdf"`);
+      return renderPdf(report, res);
+    }
+
+    // Default: JSON
+    return res.status(200).json({ success: true, data: report });
+  } catch (error) {
+    console.error('[API] Failed to build report:', error.message);
+    if (error.name === 'CastError') {
+      return res.status(400).json({ success: false, error: 'Invalid site ID format' });
+    }
+    res.status(500).json({ success: false, error: 'Failed to build report' });
   }
 });
 

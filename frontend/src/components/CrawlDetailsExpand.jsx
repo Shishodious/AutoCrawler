@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, ChevronUp, Link as LinkIcon, Globe, Lock, Zap, Clock, Layers } from 'lucide-react';
+import { ChevronDown, ChevronUp, Link as LinkIcon, Globe, Lock, Zap, Clock, Layers, FileText, Boxes } from 'lucide-react';
 
 const sectionClass = "rounded-xl border border-hairline bg-dark/50 p-4";
 const sectionTitleClass = "mb-3 flex items-center gap-2 text-sm font-semibold text-gray-300";
@@ -62,6 +62,67 @@ const CrawlDetailsExpand = ({ crawl, isExpanded, onToggle }) => {
                     <span className="text-gray-500">Content type</span>
                     <span className="ml-2 text-gray-300">{crawl.metadata.contentType}</span>
                   </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Extracted Content Section */}
+          {crawl.content && (crawl.content.wordCount > 0 || crawl.content.excerpt) && (
+            <div className={sectionClass}>
+              <h4 className={sectionTitleClass}>
+                <FileText className="w-4 h-4 text-primary-soft" />
+                Extracted content
+              </h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex flex-wrap gap-4 text-gray-400">
+                  <span>{crawl.content.wordCount || 0} words</span>
+                  {crawl.content.author && <span>By {crawl.content.author}</span>}
+                  {crawl.content.siteName && <span>{crawl.content.siteName}</span>}
+                </div>
+                {crawl.content.excerpt && (
+                  <p className="text-gray-300 italic border-l-2 border-hairline pl-3">{crawl.content.excerpt}</p>
+                )}
+                {crawl.content.headings && crawl.content.headings.length > 0 && (
+                  <div>
+                    <span className="text-gray-500">Headings</span>
+                    <ul className="mt-1 list-disc list-inside text-gray-300 max-h-40 overflow-y-auto">
+                      {crawl.content.headings.slice(0, 30).map((h, idx) => (
+                        <li key={idx}>{typeof h === 'string' ? h : h.text}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Structured Data Section */}
+          {crawl.structured && (
+            <div className={sectionClass}>
+              <h4 className={sectionTitleClass}>
+                <Boxes className="w-4 h-4 text-primary-soft" />
+                Structured data
+              </h4>
+              <div className="space-y-2 text-sm">
+                {crawl.structured.entities && crawl.structured.entities.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {crawl.structured.entities.slice(0, 20).map((e, idx) => (
+                      <span key={idx} className="rounded-md bg-primary/15 px-2 py-1 text-xs text-primary-soft">
+                        {e.type}{e.name ? `: ${e.name}` : ''}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {crawl.structured.openGraph && Object.keys(crawl.structured.openGraph).length > 0 && (
+                  <div className="text-gray-400">
+                    {Object.entries(crawl.structured.openGraph).slice(0, 6).map(([k, v]) => (
+                      <div key={k}><span className="text-gray-500">{k}:</span> <span className="text-gray-300">{String(v).slice(0, 120)}</span></div>
+                    ))}
+                  </div>
+                )}
+                {crawl.structured.jsonLd && crawl.structured.jsonLd.length > 0 && (
+                  <p className="text-xs text-gray-500">{crawl.structured.jsonLd.length} JSON-LD block(s) captured</p>
                 )}
               </div>
             </div>

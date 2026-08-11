@@ -9,6 +9,8 @@ const SiteData = require('../models/SiteData');
 const { intelligentCrawl, recursiveCrawl } = require('../utils/hybridCrawler');
 const { createSiteDataSchema } = require('../utils/validation');
 const { triggerSingleCrawl, triggerRecursiveCrawl } = require('../utils/n8nTrigger');
+const { extractWithSelectors } = require('../utils/extractors/selectorExtractor');
+const { extractWithLlm, isLlmAvailable } = require('../utils/extractors/llmExtractor');
 const { publishCrawlEvent } = require('./progressPublisher');
 const logger = require('../config/logger');
 
@@ -49,6 +51,8 @@ async function runSingleCrawl({ url, options = {}, userId = null, socketId = nul
       language: crawlResult.metadata?.language || '',
       contentType: crawlResult.metadata?.contentType || 'text/html'
     },
+    content: crawlResult.pageContent || undefined,
+    structured: crawlResult.structured || undefined,
     crawlerStats: {
       method: crawlResult.method,
       duration: crawlResult.duration,
@@ -115,6 +119,8 @@ async function runSingleCrawl({ url, options = {}, userId = null, socketId = nul
       title: siteData.title,
       links: siteData.links,
       metadata: siteData.metadata,
+      content: siteData.content,
+      structured: siteData.structured,
       crawlerStats: siteData.crawlerStats,
       sslInfo: siteData.sslInfo,
       detectionInfo: {
@@ -168,6 +174,8 @@ async function runRecursiveCrawl({ url, options = {}, userId = null, socketId = 
             language: pageResult.metadata?.language || '',
             contentType: pageResult.metadata?.contentType || 'text/html'
           },
+          content: pageResult.pageContent || undefined,
+          structured: pageResult.structured || undefined,
           crawlerStats: {
             method: pageResult.method,
             duration: pageResult.duration,
@@ -236,10 +244,77 @@ async function runRecursiveCrawl({ url, options = {}, userId = null, socketId = 
   };
 }
 
+/**
+ * Schema-driven extraction: fetch the page, then pull the requested fields
+ * via CSS selectors and/or the LLM. Returns the structured result as the
+ * job's return value (served by GET /api/crawl/jobs/:jobId).
+ */
+async function runExtract({ url, mode = 'auto', fields = [], selectors = null, socketId = null }) {
+  logger.info({ url, mode }, '[Worker] Starting extraction');
+
+  // keepRawHtml so the selector extractor has the full DOM to work with
+  const crawlResult = await intelligentCrawl(url, {
+    verbose: false,
+    keepRawHtml: true,
+    socketId,
+    emitEvent: publishCrawlEvent
+  });
+
+  if (!crawlResult.success) {
+    throw crawlError(
+      crawlResult.error?.type || 'UNKNOWN',
+      crawlResult.error?.message || 'Failed to fetch page for extraction'
+    );
+  }
+
+  const rawHtml = crawlResult.rawHtml || '';
+  const pageText = crawlResult.pageContent?.text || '';
+
+  // Decide the effective extractor for 'auto'
+  const hasSelectors = selectors && Object.keys(selectors).length > 0;
+  const hasFields = Array.isArray(fields) && fields.length > 0;
+  let effectiveMode = mode;
+  if (mode === 'auto') {
+    if (hasSelectors) effectiveMode = 'selectors';
+    else if (hasFields && isLlmAvailable()) effectiveMode = 'llm';
+    else effectiveMode = 'structured-only';
+  }
+
+  let data = {};
+  if (effectiveMode === 'selectors') {
+    if (!hasSelectors) throw crawlError('BAD_REQUEST', 'Selector mode requires selectors');
+    data = extractWithSelectors(rawHtml, selectors);
+  } else if (effectiveMode === 'llm') {
+    if (!hasFields) throw crawlError('BAD_REQUEST', 'LLM mode requires fields');
+    data = await extractWithLlm({ text: pageText, fields, url: crawlResult.url || url });
+  }
+
+  return {
+    success: true,
+    message: 'Extraction completed',
+    url: crawlResult.url || url,
+    mode: effectiveMode,
+    method: crawlResult.method,
+    data,
+    // Always include the free structured data the page embedded
+    structured: crawlResult.structured || null,
+    content: crawlResult.pageContent
+      ? {
+          excerpt: crawlResult.pageContent.excerpt,
+          author: crawlResult.pageContent.author,
+          wordCount: crawlResult.pageContent.wordCount
+        }
+      : null
+  };
+}
+
 async function processCrawlJob(job) {
   const payload = job.data;
   if (job.name === 'recursive') {
     return runRecursiveCrawl(payload);
+  }
+  if (job.name === 'extract') {
+    return runExtract(payload);
   }
   return runSingleCrawl(payload);
 }
