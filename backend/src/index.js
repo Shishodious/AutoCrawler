@@ -1,48 +1,32 @@
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const connectCluster = require("./config/database");
+const env = require('./config/env');
+const logger = require('./config/logger');
+const app = require('./app');
+const connectCluster = require('./config/database');
 const { initializeSocket } = require('./services/socketService');
-
-const app = express();
-
-const passport = require('passport');
-
-// Middleware
-app.use(cors({
-  origin: ["https://auto-crawler.vercel.app", "http://localhost:5173"],
-  credentials: true
-}));
-app.use(express.json());
-app.use(passport.initialize());
-
-// Passport Config
-require('./config/passport')(passport);
-
-// Test route
-app.get("/api/health", (req, res) => {
-  res.json({ status: "Server running", database: "Connected" });
-});
-
-// Routes
-app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api', require('./routes/crawlRoutes'));
+const { startProgressRelay } = require('./services/progressRelay');
 
 connectCluster()
   .then(() => {
-    console.log("✅ Database connection established");
-    
-    // Your existing code - this returns an HTTP server
-    const server = app.listen(process.env.PORT || 5000, () => {
-      console.log(
-        `🚀 Server successfully listening on port ${process.env.PORT || 5000}`
-      );
+    logger.info('✅ Database connection established');
+
+    const server = app.listen(env.PORT, () => {
+      logger.info(`🚀 API listening on port ${env.PORT}`);
     });
-    
-    // Initialize Socket.IO with authentication
+
+    // Socket.IO for real-time crawl progress, fed by the worker via Redis pub/sub
     initializeSocket(server);
+    startProgressRelay();
+
+    const shutdown = (signal) => {
+      logger.info(`${signal} received, shutting down`);
+      server.close(() => process.exit(0));
+      // Force-exit if connections refuse to drain
+      setTimeout(() => process.exit(1), 10000).unref();
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
   })
   .catch((err) => {
-    console.error("❌ Database connection failed:", err.message);
+    logger.error({ err: err.message }, '❌ Database connection failed');
     process.exit(1);
-  }); 
+  });

@@ -19,10 +19,12 @@ const CrawlProgressPanel = ({
       {/* Header */}
       <div className="flex justify-between items-center mb-5">
         <div className="flex items-center gap-3">
+          {crawlStatus === 'queued' && <Loader2 className="animate-spin text-gray-400" size={20} />}
           {crawlStatus === 'running' && <Loader2 className="animate-spin text-primary-soft" size={20} />}
           {crawlStatus === 'complete' && <CheckCircle className="text-success" size={20} />}
           {crawlStatus === 'error' && <XCircle className="text-danger" size={20} />}
           <h3 className="text-lg font-bold text-white m-0">
+            {crawlStatus === 'queued' && 'Queued — waiting for a worker…'}
             {crawlStatus === 'running' && 'Crawl in progress'}
             {crawlStatus === 'complete' && 'Crawl complete'}
             {crawlStatus === 'error' && 'Crawl failed'}

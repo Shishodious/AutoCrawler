@@ -37,6 +37,42 @@ async function createBrowserInstance(options = {}) {
     });
 }
 
+// Shared browser instance — launched once per process and reused across
+// crawls (pages are opened/closed per crawl instead). Prevents the cost and
+// memory blow-up of launching Chromium for every job in the worker.
+let sharedBrowserPromise = null;
+
+/**
+ * Returns the shared browser, launching it on first use and relaunching
+ * if the previous instance crashed or disconnected.
+ * @param {Object} options - Browser launch options
+ * @returns {Promise<Browser>} Shared Puppeteer browser instance
+ */
+async function getSharedBrowser(options = {}) {
+    if (sharedBrowserPromise) {
+        const browser = await sharedBrowserPromise.catch(() => null);
+        const alive = browser &&
+            (typeof browser.connected === 'boolean' ? browser.connected : browser.isConnected());
+        if (alive) return browser;
+        sharedBrowserPromise = null;
+    }
+    sharedBrowserPromise = createBrowserInstance(options);
+    return sharedBrowserPromise;
+}
+
+/**
+ * Closes the shared browser (call on process shutdown).
+ */
+async function closeSharedBrowser() {
+    if (!sharedBrowserPromise) return;
+    const browser = await sharedBrowserPromise.catch(() => null);
+    sharedBrowserPromise = null;
+    if (browser) {
+        await browser.close().catch(() => {});
+        console.log('[PUPPETEER] Shared browser closed');
+    }
+}
+
 /**
  * Sets up request interception to block unnecessary resources
  * @param {Page} page - Puppeteer page instance
@@ -178,14 +214,14 @@ async function crawlWithPuppeteer(url, options = {}) {
         viewport = { width: 1920, height: 1080 }
     } = options;
     
-    let browser;
-    
+    let page;
+
     try {
         console.log(`[PUPPETEER] Starting crawl: ${url}`);
-        
-        // Launch browser
-        browser = await createBrowserInstance({ headless: options.headless });
-        const page = await browser.newPage();
+
+        // Reuse the shared browser; only the page is per-crawl
+        const browser = await getSharedBrowser({ headless: options.headless });
+        page = await browser.newPage();
         
         // Set user agent and viewport
         await page.setUserAgent(USER_AGENT);
@@ -263,9 +299,9 @@ async function crawlWithPuppeteer(url, options = {}) {
         };
         
     } finally {
-        if (browser) {
-            await browser.close();
-            console.log(`[PUPPETEER] Browser closed`);
+        if (page) {
+            await page.close().catch(() => {});
+            console.log(`[PUPPETEER] Page closed`);
         }
     }
 }
@@ -273,6 +309,8 @@ async function crawlWithPuppeteer(url, options = {}) {
 module.exports = {
     crawlWithPuppeteer,
     createBrowserInstance,
+    getSharedBrowser,
+    closeSharedBrowser,
     setupResourceBlocking,
     autoScroll,
     extractPageData

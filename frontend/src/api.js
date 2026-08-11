@@ -64,6 +64,10 @@ export const startRecursiveCrawl = async (url, options = {}, socketId = null) =>
   return response.data;
 };
 
+// Fetch status/result of a queued crawl job
+export const getCrawlJob = (jobId) =>
+  api.get(`/crawl/jobs/${jobId}`);
+
 // ============================================
 // Sites/History Operations
 // ============================================

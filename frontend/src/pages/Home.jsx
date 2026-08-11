@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { startCrawl, startRecursiveCrawl } from '../api';
+import { startCrawl, startRecursiveCrawl, getCrawlJob } from '../api';
 import {
   Play, Loader2, Link as LinkIcon, WifiOff, ExternalLink,
   Globe, FileSearch, Network, RotateCcw, AlertCircle, ArrowRight,
@@ -24,7 +24,7 @@ const Home = () => {
   const [socketError, setSocketError] = useState(null);
 
   // Real-time crawl states
-  const [crawlStatus, setCrawlStatus] = useState('idle'); // 'idle' | 'running' | 'complete' | 'error'
+  const [crawlStatus, setCrawlStatus] = useState('idle'); // 'idle' | 'queued' | 'running' | 'complete' | 'error'
   const [crawlProgress, setCrawlProgress] = useState({});
   const [crawlMethod, setCrawlMethod] = useState(null);
   const [currentDepth, setCurrentDepth] = useState(null);
@@ -173,19 +173,41 @@ const Home = () => {
       const socket = getSocket();
       const socketId = socket?.id;
 
+      // Crawls are queued now: the API returns 202 + jobId immediately,
+      // live progress arrives over the socket, and we poll the job for
+      // the final result payload.
       if (crawlMode === 'single') {
         const response = await startCrawl(url, {}, socketId);
-        setResult(response.data);
+        setCrawlStatus('queued');
+        const job = await pollJob(response.jobId);
+        setResult(job.result?.data);
       } else {
         const response = await startRecursiveCrawl(url, DEFAULT_RECURSIVE_OPTIONS, socketId);
-        setRecursiveResult(response);
+        setCrawlStatus('queued');
+        const job = await pollJob(response.jobId);
+        setRecursiveResult(job.result);
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to crawl website');
+      setError(err.response?.data?.error || err.message || 'Failed to crawl website');
       setCrawlStatus('error');
     } finally {
       setLoading(false);
     }
+  };
+
+  // Poll a crawl job until it reaches a terminal state
+  const pollJob = async (jobId) => {
+    const POLL_MS = 2000;
+    const MAX_TRIES = 300; // ~10 minutes
+    for (let i = 0; i < MAX_TRIES; i++) {
+      const { data } = await getCrawlJob(jobId);
+      if (data.state === 'completed') return data;
+      if (data.state === 'failed') {
+        throw new Error(data.failedReason || 'Crawl failed');
+      }
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    }
+    throw new Error('Crawl timed out — check History later for results');
   };
 
   const isReCrawl = crawlStatus === 'complete' && url === lastCrawledUrl && url !== '';

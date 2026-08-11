@@ -1,342 +1,154 @@
 const express = require('express');
 const router = express.Router();
-const passport = require('passport');
-const axios = require('axios');
 const mongoose = require('mongoose');
 
 // Import models and utilities
 const SiteData = require('../models/SiteData');
-const { intelligentCrawl, recursiveCrawl } = require('../utils/hybridCrawler');
-const { getErrorType } = require('../utils/errorHandler');
 const { emitCrawlEvent } = require('../services/socketService');
 const extractSocketId = require('../middleware/socketIdMiddleware');
 const authMiddleware = require('../middleware/authMiddleware');
-const { triggerSingleCrawl, triggerRecursiveCrawl } = require('../utils/n8nTrigger');
+const { enqueueCrawlJob, getCrawlQueue } = require('../queue/crawlQueue');
 //only 2 routes need to extract socket id
-const { 
+const {
   crawlRequestSchema,
   recursiveCrawlRequestSchema,
-  createSiteDataSchema,
-  siteDataQuerySchema 
+  siteDataQuerySchema
 } = require('../utils/validation');
 
 // ============================================
-// POST /api/crawl - Start Hybrid Crawl
+// POST /api/crawl - Enqueue Hybrid Crawl
+// Crawls now run in the worker process; this returns 202 + jobId
+// immediately and progress streams over Socket.IO via the Redis relay.
 // ============================================
 router.post('/crawl', authMiddleware, extractSocketId, async (req, res) => {
   try {
     // Validate request body
     const validationResult = crawlRequestSchema.safeParse(req.body);
-    
+
     if (!validationResult.success) {
       const errors = validationResult.error.issues.map(err => ({
         field: err.path.join('.'),
         message: err.message
       }));
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        error: 'Validation failed', 
-        details: errors 
+        error: 'Validation failed',
+        details: errors
       });
     }
 
     const { url, options } = validationResult.data;
-    
-    console.log(`[API] Starting crawl for: ${url}`);
-    console.log(`[API] Socket ID: ${req.socketId || 'None (API-only mode)'}`);
-    const startTime = Date.now();
 
-    // Perform intelligent crawl with socket support
-    const crawlResult = await intelligentCrawl(url, {
-      ...options,
-      verbose: true,
-      socketId: req.socketId,
-      emitEvent: emitCrawlEvent
+    const job = await enqueueCrawlJob('single', {
+      url,
+      options,
+      userId: req.user?.id || null,
+      socketId: req.socketId
     });
 
-    // Check if crawl was successful
-    if (!crawlResult.success) {
-      return res.status(500).json({
-        success: false,
-        error: 'Crawl failed',
-        details: {
-          type: crawlResult.error?.type || 'UNKNOWN',
-          message: crawlResult.error?.message || 'Unknown error occurred'
-        }
-      });
-    }
+    console.log(`[API] Enqueued single crawl for: ${url} (job ${job.id})`);
 
-    // Prepare data for database
-    const siteDataPayload = {
-      url: crawlResult.url || url,
-      title: crawlResult.title || 'Untitled',
-      links: crawlResult.links || [],
-      metadata: {
-        description: crawlResult.metadata?.description || '',
-        keywords: crawlResult.metadata?.keywords || [],
-        author: crawlResult.metadata?.author || '',
-        ogImage: crawlResult.metadata?.ogImage || '',
-        favicon: crawlResult.metadata?.favicon || '',
-        language: crawlResult.metadata?.language || '',
-        contentType: crawlResult.metadata?.contentType || 'text/html'
-      },
-      crawlerStats: {
-        method: crawlResult.method,
-        duration: crawlResult.duration,
-        depth: options.maxDepth || 0,
-        statusCode: crawlResult.statusCode || 200,
-        responseSize: crawlResult.responseSize || 0
-      },
-      sslInfo: {
-        protocol: url.startsWith('https') ? 'https' : 'http',
-        tlsVersion: crawlResult.tlsVersion || 'N/A',
-        certificateValid: crawlResult.certificateValid || null
-      },
-      crawlSuccess: true
-    };
+    // Immediate feedback while the job waits for a worker slot
+    emitCrawlEvent('crawl:queued', { jobId: job.id, url }, req.socketId);
 
-    // Add userId only if user is authenticated
-    if (req.user?.id) {
-      siteDataPayload.userId = req.user.id;
-    }
-
-    // Validate data before saving
-    const dataValidation = createSiteDataSchema.safeParse(siteDataPayload);
-    
-    if (!dataValidation.success) {
-      console.error('[API] Data validation failed:', dataValidation.error);
-      // Still try to save with minimal data
-      const minimalData = {
-        url,
-        title: crawlResult.title || 'Untitled',
-        links: crawlResult.links || [],
-        crawlerStats: {
-          method: crawlResult.method,
-          duration: crawlResult.duration,
-          depth: 0
-        },
-        sslInfo: {
-          protocol: url.startsWith('https') ? 'https' : 'http'
-        }
-      };
-      
-      // Add userId only if user is authenticated
-      if (req.user?.id) {
-        minimalData.userId = req.user.id;
-      }
-      
-      const siteData = new SiteData(minimalData);
-      await siteData.save();
-      
-      return res.status(200).json({
-        success: true,
-        message: 'Crawl completed (partial data saved)',
-        data: siteData,
-        warning: 'Some metadata could not be validated'
-      });
-    }
-
-    // Save to database
-    const siteData = new SiteData(dataValidation.data);
-    await siteData.save();
-    
-    console.log(`[API] Saved crawl data for: ${url} (ID: ${siteData._id})`);
-
-    // Trigger n8n webhook (non-blocking)
-    triggerSingleCrawl({ url, crawlResult, siteData });
-
-    // Return success response with method stats
-    res.status(200).json({
+    res.status(202).json({
       success: true,
-      message: 'Crawl completed successfully',
-      data: {
-        id: siteData._id,
-        url: siteData.url,
-        title: siteData.title,
-        links: siteData.links,
-        metadata: siteData.metadata,
-        crawlerStats: siteData.crawlerStats,
-        sslInfo: siteData.sslInfo,
-        detectionInfo: {
-          reason: crawlResult.detectionReason || 'N/A',
-          confidence: crawlResult.confidence || 0,
-          framework: crawlResult.framework || null
-        },
-        crawlSuccess: siteData.crawlSuccess,
-        crawledAt: siteData.createdAt
-      }
+      jobId: job.id,
+      status: 'queued',
+      message: 'Crawl queued. Poll GET /api/crawl/jobs/:jobId or listen on Socket.IO for progress.'
     });
-
   } catch (error) {
-    const errorType = getErrorType(error);
-    console.error('[API] Crawl failed:', errorType, error.message);
-    
+    console.error('[API] Failed to enqueue crawl:', error.message);
     res.status(500).json({
       success: false,
-      error: 'Failed to crawl website',
-      details: {
-        type: errorType,
-        message: error.message
-      }
+      error: 'Failed to enqueue crawl',
+      details: { message: error.message }
     });
   }
 });
 
 // ============================================
-// POST /api/crawl/recursive - Start Recursive Crawl
+// POST /api/crawl/recursive - Enqueue Recursive Crawl
 // ============================================
 router.post('/crawl/recursive', authMiddleware, extractSocketId, async (req, res) => {
   try {
     // Validate request body
     const validationResult = recursiveCrawlRequestSchema.safeParse(req.body);
-    
+
     if (!validationResult.success) {
       const errors = validationResult.error.issues.map(err => ({
         field: err.path.join('.'),
         message: err.message
       }));
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        error: 'Validation failed', 
-        details: errors 
+        error: 'Validation failed',
+        details: errors
       });
     }
 
     const { url, options } = validationResult.data;
-    
-    console.log(`[API] Starting recursive crawl from: ${url}`);
-    console.log(`[API] Options: maxDepth=${options.maxDepth}, maxPages=${options.maxPages}, sameDomainOnly=${options.sameDomainOnly}`);
-    console.log(`[API] Socket ID: ${req.socketId || 'None (API-only mode)'}`);
-    
-    const startTime = Date.now();
 
-    // Perform recursive crawl with socket support
-    const crawlResult = await recursiveCrawl(url, {
-      ...options,
-      verbose: true,
-      socketId: req.socketId,
-      emitEvent: emitCrawlEvent
+    const job = await enqueueCrawlJob('recursive', {
+      url,
+      options,
+      userId: req.user?.id || null,
+      socketId: req.socketId
     });
 
-    // Check if crawl was successful
-    if (!crawlResult.success) {
-      return res.status(500).json({
+    console.log(`[API] Enqueued recursive crawl for: ${url} (job ${job.id})`);
+
+    emitCrawlEvent('crawl:queued', { jobId: job.id, url }, req.socketId);
+
+    res.status(202).json({
+      success: true,
+      jobId: job.id,
+      status: 'queued',
+      message: 'Recursive crawl queued. Poll GET /api/crawl/jobs/:jobId or listen on Socket.IO for progress.'
+    });
+  } catch (error) {
+    console.error('[API] Failed to enqueue recursive crawl:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to enqueue recursive crawl',
+      details: { message: error.message }
+    });
+  }
+});
+
+// ============================================
+// GET /api/crawl/jobs/:jobId - Crawl Job Status & Result
+// ============================================
+router.get('/crawl/jobs/:jobId', authMiddleware, async (req, res) => {
+  try {
+    const job = await getCrawlQueue().getJob(req.params.jobId);
+
+    // 404 for unknown jobs AND other users' jobs (don't leak existence)
+    if (!job || (job.data.userId && job.data.userId !== req.user?.id)) {
+      return res.status(404).json({
         success: false,
-        error: 'Recursive crawl failed',
-        details: {
-          message: 'Crawl did not complete successfully'
-        }
+        error: 'Job not found'
       });
     }
 
-    // Generate crawl session ID to group all pages together
-    const crawlSessionId = new mongoose.Types.ObjectId();
-    
-    console.log(`[API] Crawl complete. Saving ${crawlResult.results.length} pages to database...`);
-    console.log(`[API] Session ID: ${crawlSessionId}`);
+    const state = await job.getState();
 
-    // Save all crawled pages to database
-    const savedPages = [];
-    const failedPages = [];
-    
-    for (const pageResult of crawlResult.results) {
-      try {
-        // Only save successful crawls
-        if (pageResult.success) {
-          const siteDataPayload = {
-            url: pageResult.url || url,
-            title: pageResult.title || 'Untitled',
-            links: pageResult.links || [],
-            metadata: {
-              description: pageResult.metadata?.description || pageResult.description || '',
-              keywords: pageResult.metadata?.keywords || [],
-              author: pageResult.metadata?.author || '',
-              ogImage: pageResult.metadata?.ogImage || '',
-              favicon: pageResult.metadata?.favicon || '',
-              language: pageResult.metadata?.language || '',
-              contentType: pageResult.metadata?.contentType || 'text/html'
-            },
-            crawlerStats: {
-              method: pageResult.method,
-              duration: pageResult.duration,
-              depth: pageResult.depth,
-              statusCode: pageResult.statusCode || 200,
-              responseSize: pageResult.responseSize || 0
-            },
-            sslInfo: {
-              protocol: pageResult.url?.startsWith('https') ? 'https' : 'http',
-              tlsVersion: pageResult.tlsVersion || 'N/A',
-              certificateValid: pageResult.certificateValid || null
-            },
-            crawlSuccess: true,
-            crawlSessionId: crawlSessionId
-          };
-
-          // Add userId only if user is authenticated
-          if (req.user?.id) {
-            siteDataPayload.userId = req.user.id;
-          }
-
-          const siteData = new SiteData(siteDataPayload);
-          await siteData.save();
-          savedPages.push(siteData._id);
-          
-        } else {
-          // Track failed pages
-          failedPages.push({
-            url: pageResult.url,
-            depth: pageResult.depth,
-            error: pageResult.error
-          });
-        }
-      } catch (saveError) {
-        console.error(`[API] Failed to save page ${pageResult.url}:`, saveError.message);
-        failedPages.push({
-          url: pageResult.url,
-          depth: pageResult.depth,
-          error: { type: 'SAVE_ERROR', message: saveError.message }
-        });
-      }
-    }
-
-    const totalDuration = Date.now() - startTime;
-    
-    console.log(`[API] Saved ${savedPages.length} pages successfully`);
-    console.log(`[API] Failed to save ${failedPages.length} pages`);
-    console.log(`[API] Total duration: ${totalDuration}ms`);
-
-    // Trigger n8n webhook (non-blocking)
-    triggerRecursiveCrawl({ url, crawlResult, sessionId: crawlSessionId, savedPages });
-
-    // Return success response with comprehensive summary
     res.status(200).json({
       success: true,
-      message: 'Recursive crawl completed successfully',
-      crawlSessionId: crawlSessionId.toString(),
-      summary: {
-        ...crawlResult.summary,
-        totalDuration,
-        savedPages: savedPages.length,
-        failedToSave: failedPages.length
-      },
-      startUrl: crawlResult.startUrl,
-      baseUrl: crawlResult.baseUrl,
-      maxDepthReached: crawlResult.maxDepthReached,
-      savedPageIds: savedPages,
-      failedPages: failedPages.length > 0 ? failedPages : undefined
+      jobId: job.id,
+      type: job.name,
+      url: job.data.url,
+      state,
+      result: state === 'completed' ? job.returnvalue : null,
+      failedReason: state === 'failed' ? job.failedReason : null,
+      enqueuedAt: new Date(job.timestamp).toISOString()
     });
-
   } catch (error) {
-    const errorType = getErrorType(error);
-    console.error('[API] Recursive crawl failed:', errorType, error.message);
-    
+    console.error('[API] Failed to fetch job status:', error.message);
     res.status(500).json({
       success: false,
-      error: 'Failed to perform recursive crawl',
-      details: {
-        type: errorType,
-        message: error.message
-      }
+      error: 'Failed to fetch job status',
+      details: { message: error.message }
     });
   }
 });
