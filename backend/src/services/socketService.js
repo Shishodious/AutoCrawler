@@ -1,5 +1,6 @@
 const socketIO = require('socket.io');
 const socketAuth = require('../middleware/socketAuth');
+const env = require('../config/env');
 
 let io = null;
 
@@ -17,7 +18,7 @@ const initializeSocket = (server) => {
   // Initialize Socket.IO with server
   io = socketIO(server, {
     cors: {
-      origin: ["https://auto-crawler.vercel.app", "http://localhost:5173"],
+      origin: env.corsOrigins,
       methods: ["GET", "POST"],
       credentials: true
     },

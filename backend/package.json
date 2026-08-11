@@ -6,9 +6,16 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "echo \"No tests specified\" && exit 0"
+    "worker": "node src/worker/index.js",
+    "dev:worker": "nodemon src/worker/index.js",
+    "test": "vitest run"
   },
-  "keywords": ["node", "express", "mongodb", "crawler"],
+  "keywords": [
+    "node",
+    "express",
+    "mongodb",
+    "crawler"
+  ],
   "author": "Priyanshu Shishodia",
   "license": "ISC",
   "engines": {
@@ -17,20 +24,29 @@
   "dependencies": {
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
+    "bullmq": "^6.0.11",
     "cheerio": "^1.1.2",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.6.2",
+    "helmet": "^8.3.0",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.19.3",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
     "puppeteer": "^24.31.0",
     "socket.io": "^4.8.3",
     "zod": "^4.1.13"
   },
   "devDependencies": {
     "nodemon": "^3.1.11",
-    "socket.io-client": "^4.8.3"
+    "socket.io-client": "^4.8.3",
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.10"
   }
 }
