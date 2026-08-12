@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
 // Import models and utilities
 const SiteData = require('../models/SiteData');
 const ExtractTemplate = require('../models/ExtractTemplate');
+const AuthSession = require('../models/AuthSession');
+const { encrypt, isEncryptionAvailable } = require('../utils/crypto');
 const { emitCrawlEvent } = require('../services/socketService');
 const extractSocketId = require('../middleware/socketIdMiddleware');
 const authMiddleware = require('../middleware/authMiddleware');
@@ -16,7 +18,8 @@ const {
   recursiveCrawlRequestSchema,
   siteDataQuerySchema,
   extractRequestSchema,
-  extractTemplateSchema
+  extractTemplateSchema,
+  authSessionCreateSchema
 } = require('../utils/validation');
 
 // ============================================
@@ -248,6 +251,55 @@ router.delete('/extract/templates/:id', authMiddleware, async (req, res) => {
     res.json({ success: true, message: 'Template deleted' });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to delete template' });
+  }
+});
+
+// ============================================
+// Authenticated crawl sessions (Track B) — encrypted cookie storage.
+// Only for domains the user is authorized to access; AUP acknowledgment required.
+// ============================================
+router.post('/auth-sessions', authMiddleware, async (req, res) => {
+  try {
+    if (!isEncryptionAvailable()) {
+      return res.status(503).json({ success: false, error: 'Session storage unavailable: SESSION_ENC_KEY is not configured' });
+    }
+    const validationResult = authSessionCreateSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      const errors = validationResult.error.issues.map(err => ({ field: err.path.join('.'), message: err.message }));
+      return res.status(400).json({ success: false, error: 'Validation failed', details: errors });
+    }
+    const { label, domain, cookies } = validationResult.data;
+    const created = await AuthSession.create({
+      userId: req.user.id,
+      label,
+      domain: domain.toLowerCase(),
+      encryptedCookies: encrypt(cookies) // plaintext never persisted
+    });
+    // Never echo the cookies back
+    res.status(201).json({ success: true, data: { id: created._id, label: created.label, domain: created.domain, createdAt: created.createdAt } });
+  } catch (error) {
+    console.error('[API] Failed to save auth session:', error.message);
+    res.status(500).json({ success: false, error: 'Failed to save auth session' });
+  }
+});
+
+router.get('/auth-sessions', authMiddleware, async (req, res) => {
+  try {
+    // encryptedCookies is select:false — this never returns secrets
+    const sessions = await AuthSession.find({ userId: req.user.id }).sort({ createdAt: -1 });
+    res.json({ success: true, data: sessions });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to fetch auth sessions' });
+  }
+});
+
+router.delete('/auth-sessions/:id', authMiddleware, async (req, res) => {
+  try {
+    const deleted = await AuthSession.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
+    if (!deleted) return res.status(404).json({ success: false, error: 'Auth session not found' });
+    res.json({ success: true, message: 'Auth session deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to delete auth session' });
   }
 });
 

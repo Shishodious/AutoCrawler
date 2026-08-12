@@ -259,7 +259,46 @@ async function crawlWithPuppeteerWrapper(url, options, startTime, reason, emitEv
  * @returns {Promise<Object>} Unified crawl result with extraction attached
  */
 async function intelligentCrawl(url, options = {}) {
-    const result = await intelligentCrawlCore(url, options);
+    // Politeness gate: respect robots.txt unless the caller is explicitly
+    // authorized to override (AUP-gated on the route), then throttle per host.
+    if (options.respectRobots !== false) {
+        try {
+            const { checkRobots } = require('./robots');
+            const { allowed, reason } = await checkRobots(url);
+            if (!allowed) {
+                return {
+                    success: false,
+                    method: 'none',
+                    url,
+                    error: { type: 'BLOCKED', message: reason },
+                    block: { state: 'BLOCKED', blocked: true, reason }
+                };
+            }
+        } catch (err) {
+            console.error(`[HYBRID] robots check failed for ${url}: ${err.message}`);
+        }
+    }
+    if (options.throttle !== false) {
+        try {
+            const { throttleHost } = require('./rateLimiter');
+            await throttleHost(url);
+        } catch (err) {
+            console.error(`[HYBRID] throttle failed for ${url}: ${err.message}`);
+        }
+    }
+
+    // The core destructures per-engine option bags, so a top-level authorized
+    // session cookie has to be threaded into both or it never reaches the fetcher.
+    let coreOptions = options;
+    if (options.authCookies) {
+        coreOptions = {
+            ...options,
+            axiosOptions: { ...(options.axiosOptions || {}), authCookies: options.authCookies },
+            puppeteerOptions: { ...(options.puppeteerOptions || {}), authCookies: options.authCookies }
+        };
+    }
+
+    const result = await intelligentCrawlCore(url, coreOptions);
     if (!result) return result;
 
     // Axios exposes raw HTML as `content`; Puppeteer as `rawHtml`.
@@ -273,6 +312,27 @@ async function intelligentCrawl(url, options = {}) {
             result.structured = extracted.structured;
         } catch (err) {
             console.error(`[HYBRID] Extraction failed for ${url}: ${err.message}`);
+        }
+    }
+
+    // Block / challenge detection — flag captcha, anti-bot, login-wall, or
+    // rate-limit responses so the pipeline reports *why* a hard target failed
+    // instead of persisting a garbage "success".
+    if (result.success && rawHtml) {
+        try {
+            const { detectBlock } = require('./blockDetector');
+            const block = detectBlock({
+                statusCode: result.statusCode,
+                html: rawHtml,
+                title: result.title || '',
+                textLength: result.pageContent?.text?.length ?? null
+            });
+            result.block = block;
+            if (block.blocked && result.detectionReason) {
+                result.detectionReason = `${result.detectionReason}; ${block.reason}`;
+            }
+        } catch (err) {
+            console.error(`[HYBRID] Block detection failed for ${url}: ${err.message}`);
         }
     }
 

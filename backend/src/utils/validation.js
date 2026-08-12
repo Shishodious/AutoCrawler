@@ -64,10 +64,11 @@ const createSiteDataSchema = z.object({
   // Extracted content + structured data are derived (not user input) — accept loosely
   content: z.any().optional(),
   structured: z.any().optional(),
+  blockState: z.enum(['OK', 'BLOCKED', 'CAPTCHA', 'AUTH_REQUIRED', 'RATE_LIMITED']).optional(),
   crawlerStats: crawlerStatsSchema,
   sslInfo: sslInfoSchema,
   retryCount: z.number().min(0, "Retry count cannot be negative").max(10, "Retry count cannot exceed 10").optional().default(0),
-  errorType: z.enum(['TIMEOUT', 'DNS_ERROR', 'CONNECTION_ERROR', 'SSL_ERROR', 'HTTP_ERROR', 'PARSE_ERROR', 'UNKNOWN', 'NONE']).optional().default('NONE'),
+  errorType: z.enum(['TIMEOUT', 'DNS_ERROR', 'CONNECTION_ERROR', 'SSL_ERROR', 'HTTP_ERROR', 'PARSE_ERROR', 'BLOCKED', 'AUTH_REQUIRED', 'CAPTCHA', 'RATE_LIMITED', 'UNKNOWN', 'NONE']).optional().default('NONE'),
   errorMessage: z.string().max(500, "Error message cannot exceed 500 characters").optional(),
   crawlSuccess: z.boolean().optional().default(true),
   userId: z.string().optional() // MongoDB ObjectId as string
@@ -113,8 +114,20 @@ const crawlRequestSchema = z.object({
     detectionThreshold: z.number().min(0).max(1).optional().default(0.5),
     verbose: z.boolean().optional().default(false),
     maxPages: z.number().min(1).max(100).optional().default(50),
-    delayMs: z.number().min(0).max(5000).optional().default(1500)
+    delayMs: z.number().min(0).max(5000).optional().default(1500),
+    // Track B — access overrides (only honored when authorized === true)
+    authorized: z.boolean().optional().default(false),
+    respectRobots: z.boolean().optional(),
+    authSessionId: z.string().optional()
   }).optional().default({})
+});
+
+// Save an authenticated session for a domain the user is entitled to crawl
+const authSessionCreateSchema = z.object({
+  label: z.string().trim().min(1, "Label is required").max(100),
+  domain: z.string().trim().min(1, "Domain is required").max(255),
+  cookies: z.string().min(1, "Cookie string is required").max(20000),
+  authorized: z.literal(true, { errorMap: () => ({ message: "You must confirm you are authorized to access this domain" }) })
 });
 
 // Recursive crawl request schema for POST /api/crawl/recursive
@@ -174,6 +187,7 @@ module.exports = {
   loginSchema,
   extractRequestSchema,
   extractTemplateSchema,
+  authSessionCreateSchema,
   urlSchema,
   metadataSchema,
   crawlerStatsSchema,

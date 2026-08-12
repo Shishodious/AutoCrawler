@@ -11,8 +11,32 @@ const { createSiteDataSchema } = require('../utils/validation');
 const { triggerSingleCrawl, triggerRecursiveCrawl } = require('../utils/n8nTrigger');
 const { extractWithSelectors } = require('../utils/extractors/selectorExtractor');
 const { extractWithLlm, isLlmAvailable } = require('../utils/extractors/llmExtractor');
+const AuthSession = require('../models/AuthSession');
+const { decrypt } = require('../utils/crypto');
 const { publishCrawlEvent } = require('./progressPublisher');
 const logger = require('../config/logger');
+
+/**
+ * Resolve AUP-gated access overrides. robots.txt is respected unless the caller
+ * is explicitly authorized AND asked to override; an authorized session cookie
+ * is decrypted only for its owner. Returns { authCookies?, respectRobots }.
+ */
+async function resolveAccessOptions(options = {}, userId) {
+  const authorized = options.authorized === true;
+  // Only an authorized request may disable robots; everyone else respects it.
+  const respectRobots = !(authorized && options.respectRobots === false);
+
+  let authCookies;
+  if (authorized && options.authSessionId && userId) {
+    try {
+      const session = await AuthSession.findOne({ _id: options.authSessionId, userId }).select('+encryptedCookies');
+      if (session) authCookies = decrypt(session.encryptedCookies);
+    } catch (err) {
+      logger.warn({ err: err.message }, '[Worker] Failed to load/decrypt auth session');
+    }
+  }
+  return { authCookies, respectRobots };
+}
 
 /** Throw an error that carries the crawl error type for the job's failedReason */
 function crawlError(type, message) {
@@ -24,8 +48,10 @@ function crawlError(type, message) {
 async function runSingleCrawl({ url, options = {}, userId = null, socketId = null }) {
   logger.info({ url, socketId }, '[Worker] Starting single crawl');
 
+  const access = await resolveAccessOptions(options, userId);
   const crawlResult = await intelligentCrawl(url, {
     ...options,
+    ...access,
     verbose: true,
     socketId,
     emitEvent: publishCrawlEvent
@@ -65,7 +91,12 @@ async function runSingleCrawl({ url, options = {}, userId = null, socketId = nul
       tlsVersion: crawlResult.tlsVersion || 'N/A',
       certificateValid: crawlResult.certificateValid || null
     },
-    crawlSuccess: true
+    blockState: crawlResult.block?.state || 'OK',
+    // A detected block is not a successful crawl — record why
+    crawlSuccess: !crawlResult.block?.blocked,
+    ...(crawlResult.block?.blocked
+      ? { errorType: crawlResult.block.state, errorMessage: crawlResult.block.reason }
+      : {})
   };
 
   if (userId) {
@@ -110,9 +141,13 @@ async function runSingleCrawl({ url, options = {}, userId = null, socketId = nul
   // Trigger n8n webhook (non-blocking)
   triggerSingleCrawl({ url, crawlResult, siteData });
 
+  const blocked = Boolean(crawlResult.block?.blocked);
+
   return {
     success: true,
-    message: 'Crawl completed successfully',
+    message: blocked
+      ? `Crawl reached the page but it was ${crawlResult.block.state} (${crawlResult.block.reason})`
+      : 'Crawl completed successfully',
     data: {
       id: siteData._id,
       url: siteData.url,
@@ -128,6 +163,10 @@ async function runSingleCrawl({ url, options = {}, userId = null, socketId = nul
         confidence: crawlResult.confidence || 0,
         framework: crawlResult.framework || null
       },
+      // Access outcome — surfaced so a blocked page never reads as a clean crawl
+      blockState: siteData.blockState,
+      blockReason: crawlResult.block?.reason || null,
+      errorType: siteData.errorType,
       crawlSuccess: siteData.crawlSuccess,
       crawledAt: siteData.createdAt
     }

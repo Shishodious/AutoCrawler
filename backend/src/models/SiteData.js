@@ -169,8 +169,15 @@ const siteDataSchema = new mongoose.Schema({
   
   errorType: {
     type: String,
-    enum: ['TIMEOUT', 'DNS_ERROR', 'CONNECTION_ERROR', 'SSL_ERROR', 'HTTP_ERROR', 'PARSE_ERROR', 'UNKNOWN', 'NONE'],
+    enum: ['TIMEOUT', 'DNS_ERROR', 'CONNECTION_ERROR', 'SSL_ERROR', 'HTTP_ERROR', 'PARSE_ERROR', 'BLOCKED', 'AUTH_REQUIRED', 'CAPTCHA', 'RATE_LIMITED', 'UNKNOWN', 'NONE'],
     default: 'NONE'
+  },
+
+  // Access outcome: was the page reachable, or did we hit a block/challenge?
+  blockState: {
+    type: String,
+    enum: ['OK', 'BLOCKED', 'CAPTCHA', 'AUTH_REQUIRED', 'RATE_LIMITED'],
+    default: 'OK'
   },
   
   errorMessage: {
