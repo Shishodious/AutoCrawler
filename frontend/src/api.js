@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'https://autocrawler-1.onrender.com/api',
+  // Defaults to production; override with VITE_API_URL (e.g. in .env.local) for local dev
+  baseURL: import.meta.env.VITE_API_URL || 'https://autocrawler-1.onrender.com/api',
   headers: {
     'Content-Type': 'application/json',
   },
