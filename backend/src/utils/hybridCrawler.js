@@ -31,7 +31,7 @@ function safeEmit(emitEvent, eventName, data, socketId) {
  * @param {Object} options - Crawling options
  * @returns {Promise<Object>} Unified crawl result
  */
-async function intelligentCrawl(url, options = {}) {
+async function intelligentCrawlCore(url, options = {}) {
     const {
         forceMethod = null,           // 'axios' or 'puppeteer' to override detection
         detectionThreshold = 0.5,     // Confidence threshold for Puppeteer
@@ -246,6 +246,105 @@ async function crawlWithPuppeteerWrapper(url, options, startTime, reason, emitEv
     }, socketId);
     
     return finalResult;
+}
+
+/**
+ * Public crawl entry point. Runs the hybrid crawl, then the extraction
+ * pipeline (content + structured data) over the raw HTML the crawl returned,
+ * attaching `pageContent` and `structured` to the result. Raw HTML is stripped
+ * from the returned object (it's large and not persisted) unless
+ * options.keepRawHtml is set (used by the /extract flow, which needs the DOM).
+ * @param {string} url
+ * @param {Object} options - options.extract=false skips extraction
+ * @returns {Promise<Object>} Unified crawl result with extraction attached
+ */
+async function intelligentCrawl(url, options = {}) {
+    // Politeness gate: respect robots.txt unless the caller is explicitly
+    // authorized to override (AUP-gated on the route), then throttle per host.
+    if (options.respectRobots !== false) {
+        try {
+            const { checkRobots } = require('./robots');
+            const { allowed, reason } = await checkRobots(url);
+            if (!allowed) {
+                return {
+                    success: false,
+                    method: 'none',
+                    url,
+                    error: { type: 'BLOCKED', message: reason },
+                    block: { state: 'BLOCKED', blocked: true, reason }
+                };
+            }
+        } catch (err) {
+            console.error(`[HYBRID] robots check failed for ${url}: ${err.message}`);
+        }
+    }
+    if (options.throttle !== false) {
+        try {
+            const { throttleHost } = require('./rateLimiter');
+            await throttleHost(url);
+        } catch (err) {
+            console.error(`[HYBRID] throttle failed for ${url}: ${err.message}`);
+        }
+    }
+
+    // The core destructures per-engine option bags, so a top-level authorized
+    // session cookie has to be threaded into both or it never reaches the fetcher.
+    let coreOptions = options;
+    if (options.authCookies) {
+        coreOptions = {
+            ...options,
+            axiosOptions: { ...(options.axiosOptions || {}), authCookies: options.authCookies },
+            puppeteerOptions: { ...(options.puppeteerOptions || {}), authCookies: options.authCookies }
+        };
+    }
+
+    const result = await intelligentCrawlCore(url, coreOptions);
+    if (!result) return result;
+
+    // Axios exposes raw HTML as `content`; Puppeteer as `rawHtml`.
+    const rawHtml = result.content || result.rawHtml || '';
+
+    if (result.success && rawHtml && options.extract !== false) {
+        try {
+            const { runExtractionPipeline } = require('./extractors');
+            const extracted = runExtractionPipeline(rawHtml, result.url || url);
+            result.pageContent = extracted.content;
+            result.structured = extracted.structured;
+        } catch (err) {
+            console.error(`[HYBRID] Extraction failed for ${url}: ${err.message}`);
+        }
+    }
+
+    // Block / challenge detection — flag captcha, anti-bot, login-wall, or
+    // rate-limit responses so the pipeline reports *why* a hard target failed
+    // instead of persisting a garbage "success".
+    if (result.success && rawHtml) {
+        try {
+            const { detectBlock } = require('./blockDetector');
+            const block = detectBlock({
+                statusCode: result.statusCode,
+                html: rawHtml,
+                title: result.title || '',
+                textLength: result.pageContent?.text?.length ?? null
+            });
+            result.block = block;
+            if (block.blocked && result.detectionReason) {
+                result.detectionReason = `${result.detectionReason}; ${block.reason}`;
+            }
+        } catch (err) {
+            console.error(`[HYBRID] Block detection failed for ${url}: ${err.message}`);
+        }
+    }
+
+    if (options.keepRawHtml) {
+        result.rawHtml = rawHtml;
+    } else {
+        delete result.rawHtml;
+    }
+    // `content` on the axios path holds raw HTML — drop it from the public result
+    delete result.content;
+
+    return result;
 }
 
 /**

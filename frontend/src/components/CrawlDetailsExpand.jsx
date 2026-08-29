@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChevronDown, ChevronUp, Link as LinkIcon, Globe, Lock, Zap, Clock, Layers } from 'lucide-react';
+import { ExtractedContentSection, StructuredDataSection } from './ExtractedContent';
 
 const sectionClass = "rounded-xl border border-hairline bg-dark/50 p-4";
 const sectionTitleClass = "mb-3 flex items-center gap-2 text-sm font-semibold text-gray-300";
@@ -66,6 +67,10 @@ const CrawlDetailsExpand = ({ crawl, isExpanded, onToggle }) => {
               </div>
             </div>
           )}
+
+          {/* Extraction output (shared with the Home result card) */}
+          <ExtractedContentSection content={crawl.content} />
+          <StructuredDataSection structured={crawl.structured} />
 
           {/* Crawler Stats Section */}
           {crawl.crawlerStats && (

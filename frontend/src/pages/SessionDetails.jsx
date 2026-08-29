@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getSession } from '../api';
+import { getSession, downloadReport } from '../api';
 import {
   ArrowLeft,
   Network,
@@ -36,6 +36,26 @@ const SessionDetails = () => {
 
     fetchSession();
   }, [sessionId]);
+
+  const handleExport = async (siteId, format) => {
+    try {
+      const res = await downloadReport(siteId, format);
+      const isJson = format === 'json';
+      const blob = isJson
+        ? new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' })
+        : res.data;
+      const objUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = `report-${siteId}.${format === 'md' ? 'md' : format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(objUrl);
+    } catch {
+      // ignore — download failures are non-critical
+    }
+  };
 
   if (loading) {
     return (
@@ -237,9 +257,25 @@ const SessionDetails = () => {
                 </div>
               </div>
 
-              {/* Right: Timestamp */}
-              <div className="flex-shrink-0 font-mono text-xs text-gray-500 md:text-right">
-                {new Date(page.crawledAt).toLocaleString()}
+              {/* Right: Timestamp + export */}
+              <div className="flex flex-shrink-0 flex-col items-start gap-2 md:items-end">
+                <div className="font-mono text-xs text-gray-500">
+                  {new Date(page.crawledAt).toLocaleString()}
+                </div>
+                {page.id && (
+                  <div className="flex gap-1">
+                    {['json', 'md', 'pdf'].map((fmt) => (
+                      <button
+                        key={fmt}
+                        onClick={() => handleExport(page.id, fmt)}
+                        className="rounded-md border border-hairline px-2 py-0.5 text-[11px] uppercase text-gray-400 transition-colors hover:border-primary hover:text-primary-soft"
+                        title={`Download ${fmt.toUpperCase()} report`}
+                      >
+                        {fmt}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>

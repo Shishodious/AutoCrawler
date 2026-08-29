@@ -2,50 +2,62 @@ const axios = require('axios');
 const https = require('https');
 const cheerio = require('cheerio');
 const { URL } = require('url');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const { normalizeUrl } = require('./urlValidator');
 const { getErrorType, shouldNotRetry } = require('./errorHandler');
 
 // Constants
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+/** Extra headers (auth session cookie) common to both instances. */
+function buildHeaders(base, opts) {
+    const headers = { ...base };
+    if (opts.authCookies) headers['Cookie'] = opts.authCookies;
+    return headers;
+}
+
 /**
- * Creates a secure Axios instance with strict TLS 1.2+ security
- * @returns {import('axios').AxiosInstance} Configured Axios instance
+ * Creates a secure Axios instance with strict TLS 1.2+ security.
+ * @param {Object} [opts] - { proxy, authCookies }
  */
-function createSecureAxiosInstance() {
+function createSecureAxiosInstance(opts = {}) {
+    const httpsAgent = opts.proxy
+        ? new HttpsProxyAgent(opts.proxy, { rejectUnauthorized: true, minVersion: 'TLSv1.2' })
+        : new https.Agent({ rejectUnauthorized: true, minVersion: 'TLSv1.2', maxVersion: 'TLSv1.3' });
+
     return axios.create({
-        httpsAgent: new https.Agent({
-            rejectUnauthorized: true,          // Strict certificate checking
-            minVersion: 'TLSv1.2',             // Secure minimum protocol
-            maxVersion: 'TLSv1.3'
-        }),
+        httpsAgent,
         timeout: 30000,
         maxRedirects: 5,
-        headers: {
+        headers: buildHeaders({
             'User-Agent': USER_AGENT,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Cache-Control': 'no-cache'
-        },
+        }, opts),
         validateStatus: status => status < 500
     });
 }
 
 /**
- * Creates a legacy fallback Axios instance for older/self-signed certificates
- * @returns {import('axios').AxiosInstance} Configured Axios instance
+ * Creates a legacy fallback Axios instance for older/self-signed certificates.
+ * @param {Object} [opts] - { proxy, authCookies }
  */
-function createLegacyAxiosInstance() {
-    return axios.create({
-        httpsAgent: new https.Agent({
-            rejectUnauthorized: false,             // Allow old/self-signed certs ONLY when necessary
+function createLegacyAxiosInstance(opts = {}) {
+    const httpsAgent = opts.proxy
+        ? new HttpsProxyAgent(opts.proxy, { rejectUnauthorized: false })
+        : new https.Agent({
+            rejectUnauthorized: false,
             secureOptions: require('constants').SSL_OP_LEGACY_SERVER_CONNECT,
-            minVersion: 'TLSv1',                   // Enables TLS 1.0 compatibility
+            minVersion: 'TLSv1',
             maxVersion: 'TLSv1.3'
-        }),
+        });
+
+    return axios.create({
+        httpsAgent,
         timeout: 30000,
         maxRedirects: 5,
-        headers: { 'User-Agent': USER_AGENT },
+        headers: buildHeaders({ 'User-Agent': USER_AGENT }, opts),
         validateStatus: status => status < 500
     });
 }
@@ -58,9 +70,9 @@ function createLegacyAxiosInstance() {
  * @param {number} maxRetries - Maximum number of retry attempts
  * @returns {Promise<import('axios').AxiosResponse>} Axios response object
  */
-async function fetchWithRetry(url, maxRetries = 2) {
-    const secureAxios = createSecureAxiosInstance();
-    const legacyAxios = createLegacyAxiosInstance();
+async function fetchWithRetry(url, maxRetries = 2, opts = {}) {
+    const secureAxios = createSecureAxiosInstance(opts);
+    const legacyAxios = createLegacyAxiosInstance(opts);
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
@@ -104,15 +116,19 @@ async function fetchWithRetry(url, maxRetries = 2) {
  */
 async function crawlWithAxios(url, options = {}) {
     const { maxRetries = 2 } = options;
-    
+    const { nextProxy } = require('./proxy');
+
     try {
         console.log(`[CRAWLER] Starting crawl: ${url}`);
-        
-        // Fetch the HTML content
-        const response = await fetchWithRetry(url, maxRetries);
-        
+
+        // Fetch the HTML content — optionally via proxy + authorized session cookie
+        const response = await fetchWithRetry(url, maxRetries, {
+            proxy: nextProxy(),
+            authCookies: options.authCookies
+        });
+
         // Check if response is successful
-        if (response.status >= 400) {
+        if (response.status >= 400 && response.status !== 401 && response.status !== 403 && response.status !== 429) {
             throw new Error(`HTTP ${response.status}: Failed to fetch ${url}`);
         }
 
@@ -151,6 +167,7 @@ async function crawlWithAxios(url, options = {}) {
             links: uniqueLinks,
             url: normalizeUrl(url) || url,
             timestamp: new Date(),
+            statusCode: response.status,   // surfaced for block detection (401/403/429)
             content: response.data  // Add HTML content for detection
         };
 

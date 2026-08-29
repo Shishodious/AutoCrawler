@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { startCrawl, startRecursiveCrawl, getCrawlJob } from '../api';
 import {
   Play, Loader2, Link as LinkIcon, WifiOff, ExternalLink,
-  Globe, FileSearch, Network, RotateCcw, AlertCircle, ArrowRight,
+  Globe, FileSearch, Network, RotateCcw, AlertCircle, ArrowRight, ShieldAlert,
 } from 'lucide-react';
 import { getSocket } from '../services/socket';
 import CrawlProgressPanel from '../components/CrawlProgressPanel';
+import { ExtractedContentSection, StructuredDataSection } from '../components/ExtractedContent';
+import { hasExtractedContent, hasStructuredData } from '../utils/extraction';
 
 const Home = () => {
   const navigate = useNavigate();
@@ -376,6 +378,32 @@ const Home = () => {
             </div>
           </div>
 
+          {/* Access outcome — a blocked page must never read as a clean crawl */}
+          {result.blockState && result.blockState !== 'OK' && (
+            <div className="mb-4 flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-warning">
+              <ShieldAlert className="mt-0.5 w-5 h-5 flex-shrink-0" />
+              <div>
+                <p className="font-semibold">Page was {result.blockState.replace('_', ' ').toLowerCase()}</p>
+                {result.blockReason && <p className="text-sm opacity-80">{result.blockReason}</p>}
+              </div>
+            </div>
+          )}
+
+          {/* Extraction output — same sections the History details view shows */}
+          {(hasExtractedContent(result.content) || hasStructuredData(result.structured)) ? (
+            <div className="mb-6 space-y-4">
+              <ExtractedContentSection content={result.content} />
+              <StructuredDataSection structured={result.structured} />
+            </div>
+          ) : (
+            <p className="mb-6 rounded-xl border border-hairline bg-dark/50 p-4 text-sm text-gray-500">
+              No readable article text found on this page. Image-heavy or app-like pages often have
+              none — try the <Link to="/extract" className="text-primary-soft hover:underline">Extract</Link> page
+              with CSS selectors to pull specific fields instead.
+            </p>
+          )}
+
+          <h3 className="mb-3 text-sm font-semibold text-gray-300">Links</h3>
           <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
             {result.links.slice(0, 5).map((link, index) => (
               <a

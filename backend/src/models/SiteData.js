@@ -79,6 +79,27 @@ const siteDataSchema = new mongoose.Schema({
     }
   },
   
+  // Extracted readable content (Readability pass)
+  content: {
+    text: { type: String },
+    excerpt: { type: String, trim: true },
+    author: { type: String, trim: true },
+    siteName: { type: String, trim: true },
+    publishedTime: { type: String, trim: true },
+    wordCount: { type: Number, min: 0 },
+    headings: [{
+      tag: { type: String },
+      text: { type: String }
+    }],
+    images: [{ type: String }]
+  },
+
+  // Structured data the page embeds (JSON-LD, OpenGraph, Twitter cards)
+  structured: {
+    type: mongoose.Schema.Types.Mixed,
+    default: undefined
+  },
+
   // Crawler statistics
   crawlerStats: {
     method: {
@@ -148,8 +169,15 @@ const siteDataSchema = new mongoose.Schema({
   
   errorType: {
     type: String,
-    enum: ['TIMEOUT', 'DNS_ERROR', 'CONNECTION_ERROR', 'SSL_ERROR', 'HTTP_ERROR', 'PARSE_ERROR', 'UNKNOWN', 'NONE'],
+    enum: ['TIMEOUT', 'DNS_ERROR', 'CONNECTION_ERROR', 'SSL_ERROR', 'HTTP_ERROR', 'PARSE_ERROR', 'BLOCKED', 'AUTH_REQUIRED', 'CAPTCHA', 'RATE_LIMITED', 'UNKNOWN', 'NONE'],
     default: 'NONE'
+  },
+
+  // Access outcome: was the page reachable, or did we hit a block/challenge?
+  blockState: {
+    type: String,
+    enum: ['OK', 'BLOCKED', 'CAPTCHA', 'AUTH_REQUIRED', 'RATE_LIMITED'],
+    default: 'OK'
   },
   
   errorMessage: {

@@ -3,9 +3,23 @@
  * Features: Resource blocking, auto-scroll, lazy loading, screenshots, metadata extraction
  */
 
-const puppeteer = require('puppeteer');
+const env = require('../config/env');
 const { normalizeUrl, sanitizeLinks } = require('./urlValidator');
 const { getErrorType, getDetailedErrorInfo } = require('./errorHandler');
+const { nextProxy } = require('./proxy');
+
+// Use the stealth-plugin build of Puppeteer when STEALTH_ENABLED — reduces
+// trivial automation fingerprints. Defaults to vanilla puppeteer otherwise.
+let puppeteer;
+if (env.STEALTH_ENABLED === 'true') {
+    const puppeteerExtra = require('puppeteer-extra');
+    const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+    puppeteerExtra.use(StealthPlugin());
+    puppeteer = puppeteerExtra;
+    console.log('[PUPPETEER] Stealth mode enabled');
+} else {
+    puppeteer = require('puppeteer');
+}
 
 // Constants
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -21,19 +35,27 @@ const BLOCKED_DOMAINS = ['google-analytics.com', 'googletagmanager.com', 'facebo
  */
 async function createBrowserInstance(options = {}) {
     const { headless = true } = options;
-    
+
+    const args = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--window-size=1920,1080',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process'
+    ];
+
+    // Route the whole browser through a proxy when one is configured.
+    const proxy = nextProxy();
+    if (proxy) {
+        args.push(`--proxy-server=${proxy}`);
+    }
+
     return await puppeteer.launch({
         headless: headless ? 'new' : false,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--disable-gpu',
-            '--window-size=1920,1080',
-            '--disable-web-security',
-            '--disable-features=IsolateOrigins,site-per-process'
-        ]
+        args
     });
 }
 
@@ -224,8 +246,14 @@ async function crawlWithPuppeteer(url, options = {}) {
         page = await browser.newPage();
         
         // Set user agent and viewport
-        await page.setUserAgent(USER_AGENT);
+        await page.setUserAgent(options.userAgent || USER_AGENT);
         await page.setViewport(viewport);
+
+        // Inject an authorized session cookie for sites the user is entitled
+        // to access (decrypted upstream; only present on AUP-authorized crawls).
+        if (options.authCookies) {
+            await page.setExtraHTTPHeaders({ Cookie: options.authCookies });
+        }
         
         // Set default timeout
         page.setDefaultTimeout(timeout);
@@ -255,7 +283,10 @@ async function crawlWithPuppeteer(url, options = {}) {
         
         // Extract page data
         const pageData = await extractPageData(page, url);
-        
+
+        // Capture the rendered HTML for the extraction pipeline (content + structured data)
+        const rawHtml = await page.content().catch(() => '');
+
         // Take screenshot if requested
         let screenshotPath = null;
         if (screenshot) {
@@ -273,6 +304,7 @@ async function crawlWithPuppeteer(url, options = {}) {
         return {
             success: true,
             ...pageData,
+            rawHtml,
             screenshot: screenshotPath,
             timestamp: new Date(),
             options: {

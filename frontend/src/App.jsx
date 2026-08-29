@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
+import Extract from './pages/Extract';
 import History from './pages/History';
 import SessionDetails from './pages/SessionDetails';
 import Stats from './pages/Stats';
@@ -61,6 +62,14 @@ function App() {
                 <Home />
               </PrivateRoute>
             
+            }
+          />
+          <Route
+            path="/extract"
+            element={
+              <PrivateRoute>
+                <Extract />
+              </PrivateRoute>
             }
           />
           <Route

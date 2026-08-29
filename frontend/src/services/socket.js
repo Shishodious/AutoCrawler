@@ -7,7 +7,8 @@ let socket = null;
  */
 export const initSocket = (token) => {
   if (!socket) {
-    socket = io("https://autocrawler-1.onrender.com", {
+    // Defaults to production; override with VITE_SOCKET_URL for local dev
+    socket = io(import.meta.env.VITE_SOCKET_URL || "https://autocrawler-1.onrender.com", {
       transports: ["websocket"],
     
       autoConnect: false,

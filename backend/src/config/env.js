@@ -17,6 +17,14 @@ const envSchema = z.object({
     .default('https://auto-crawler.vercel.app,http://localhost:5173'),
   CRAWL_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(3),
   LOG_LEVEL: z.string().default('info'),
+  LLM_MODEL: z.string().default('claude-sonnet-5'),
+  // Crawler politeness & access (Track B)
+  CRAWLER_USER_AGENT: z.string().default('AutoCrawlerBot'),
+  CRAWLER_INFO_URL: z.string().default(''),
+  CRAWL_MIN_HOST_INTERVAL_MS: z.coerce.number().int().min(0).max(60000).default(1000),
+  STEALTH_ENABLED: z.string().optional(),
+  PROXY_URLS: z.string().default(''), // comma-separated proxy URLs, rotated per request
+  SESSION_ENC_KEY: z.string().optional(), // hex/base64 key for encrypting stored auth sessions
   N8N_ENABLED: z.string().optional(),
   N8N_WEBHOOK_URL: z.string().optional()
 });
